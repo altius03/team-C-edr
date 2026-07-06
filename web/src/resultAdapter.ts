@@ -201,6 +201,10 @@ export type DashboardResult = {
   readonly source: string;
 };
 
+const KNOWN_ENDPOINTS: readonly Pick<EndpointRisk, "host" | "hostId">[] = [
+  { host: "이주호-Desktop", hostId: "endpoint-04" }
+] as const;
+
 declare global {
   interface Window {
     SIEM_RESULT?: unknown;
@@ -267,6 +271,8 @@ export function adaptResult(raw: unknown): DashboardResult {
     ...recordOrEmpty(siem.telemetry_metadata)
   };
   const topologySummary = recordOrEmpty(topology.summary);
+  const endpointRisk = includeKnownEndpointRisk(arrayOfRecords(result.endpoint_risk).map(toEndpointRisk));
+  const topologyNodes = includeKnownTopologyNodes(arrayOfRecords(topology.nodes).map(toTopologyNode));
 
   return {
     status: text(result.status, "empty"),
@@ -289,7 +295,7 @@ export function adaptResult(raw: unknown): DashboardResult {
       predictedHighOrCritical: numberValue(summary.predicted_high_or_critical_count)
     },
     alerts: arrayOfRecords(result.alerts).map(toAlert),
-    endpointRisk: arrayOfRecords(result.endpoint_risk).map(toEndpointRisk),
+    endpointRisk,
     events: arrayOfRecords(result.events).map(toEventRow),
     dlqEvents: arrayOfRecords(result.dlq_events).map(toDlqEvent),
     processTrees: arrayOfRecords(result.process_trees).map(toProcessTreeRow),
@@ -310,7 +316,7 @@ export function adaptResult(raw: unknown): DashboardResult {
     })),
     responseActions: arrayOfRecords(responsePlan.actions).map(toResponseAction),
     topology: {
-      nodes: arrayOfRecords(topology.nodes).map(toTopologyNode),
+      nodes: topologyNodes,
       edges: arrayOfRecords(topology.edges).map(toTopologyEdge),
       summary: {
         endpointCount: numberValue(topologySummary.endpoint_count),
@@ -537,6 +543,38 @@ function sourceLabel(input: Readonly<Record<string, unknown>>): string {
   return source;
 }
 
+function includeKnownEndpointRisk(rows: readonly EndpointRisk[]): readonly EndpointRisk[] {
+  const knownHostIds = new Set(rows.map((row) => row.hostId));
+  const missingRows = KNOWN_ENDPOINTS
+    .filter((endpoint) => !knownHostIds.has(endpoint.hostId))
+    .map((endpoint) => ({
+      host: endpoint.host,
+      hostId: endpoint.hostId,
+      severity: "info",
+      riskScore: 0,
+      alerts: 0,
+      incidents: 0,
+      topRules: [],
+      lastEventTime: ""
+    } satisfies EndpointRisk));
+  return [...rows, ...missingRows];
+}
+
+function includeKnownTopologyNodes(nodes: readonly TopologyNode[]): readonly TopologyNode[] {
+  const knownNodeIds = new Set(nodes.map((node) => node.id));
+  const missingNodes = KNOWN_ENDPOINTS
+    .filter((endpoint) => !knownNodeIds.has(endpoint.hostId))
+    .map((endpoint) => ({
+      id: endpoint.hostId,
+      label: endpoint.host,
+      layer: "endpoint",
+      state: "not-detected",
+      riskScore: 0,
+      alertCount: 0
+    } satisfies TopologyNode));
+  return [...nodes, ...missingNodes];
+}
+
 function recordOrEmpty(value: unknown): Readonly<Record<string, unknown>> {
   return isRecord(value) ? value : {};
 }
@@ -566,7 +604,7 @@ function hostLabel(hostId: string, displayName: string): string {
     "endpoint-01": "황건하 PC",
     "endpoint-02": "박소연 Laptop",
     "endpoint-03": "이혜령 Workstation",
-    "endpoint-04": "이주호 Server"
+    "endpoint-04": "이주호-Desktop"
   };
   if (isReadableLabel(displayName)) {
     return displayName;

@@ -17,13 +17,6 @@ def run_default_analysis_job(
     input_meta: JsonObject,
     response_mode: str = "queued",
 ) -> str:
-    """Run the existing detection engine as a service worker job.
-
-    The queue boundary is intentionally narrow: RabbitMQ/Celery can later call
-    this function without changing detection, SIEM correlation, or reporting
-    code. Today it gives the project a real asynchronous-work boundary while
-    still running locally without an external broker.
-    """
     result = analyze_events(events, input_meta=input_meta)
     result["response_plan"] = build_response_plan(result, mode=response_mode)
     result["ai_predictions"] = build_ai_predictions(result)

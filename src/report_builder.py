@@ -169,7 +169,7 @@ def build_markdown_report(payload: dict[str, Any]) -> str:
             f"- Customer: `{metadata.get('customer_id', '-')}` / Tenant: `{metadata.get('tenant_id', '-')}`",
             f"- Agent version: `{metadata.get('agent_version', '-')}` / Payload version: `{metadata.get('payload_version', '-')}`",
             f"- Current transport: `{api_contract.get('current_transport', 'REST')}`",
-            f"- Swagger/OpenAPI: `{api_contract.get('swagger_path', 'docs/openapi.yaml')}`",
+            f"- Swagger/OpenAPI: `{api_contract.get('swagger_path', '/docs')}`",
             f"- Collector note: {siem_analysis.get('collector_explanation', '-')}",
             "",
             "## 5. Alert Evidence",

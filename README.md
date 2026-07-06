@@ -65,8 +65,8 @@ flowchart LR
 ## 빠른 시작
 
 ```powershell
-cd poc_code/security_edr_siem_poc
-python -m src.run
+cd team-C-edr
+uv run python -m src.run
 ```
 
 실행하면 최신 결과가 자동으로 생성됩니다.
@@ -88,7 +88,7 @@ dashboard/index.html
 
 대시보드에서 `보고서 열기`를 누르면 팝업 보고서가 열리고, `PDF로 저장`은 브라우저의 print-to-PDF 흐름을 사용합니다. 사용자 화면에는 raw `result.json` 링크를 노출하지 않습니다.
 
-좌측 하단 `데이터 소스`는 현재 화면이 읽는 마지막 CLI 실행 결과를 표시합니다. 소스를 바꾸려면 `python -m src.run`, `python -m src.run --collect-local`, `python -m src.run --collect-local --include-dns-cache`, `python -m src.run --l7-file samples\decrypted_l7_records.json` 중 하나로 다시 실행한 뒤 `dashboard/index.html`을 새로고침합니다.
+화면은 현재 읽는 마지막 CLI 실행 결과를 데이터 출처로 표시합니다. 소스를 바꾸려면 `uv run python -m src.run`, `uv run python -m src.run --collect-local`, `uv run python -m src.run --collect-local --include-dns-cache`, `uv run python -m src.run --l7-file samples\decrypted_l7_records.json` 중 하나로 다시 실행한 뒤 dashboard를 새로고침합니다.
 
 ---
 
@@ -102,7 +102,7 @@ npm run build
 npm run preview
 ```
 
-`npm run preview`는 Vite preview 서버로 `dist/`를 띄웁니다. 데이터 소스를 바꾸는 방식은 동일하게 `python -m src.run ...`을 먼저 다시 실행한 뒤 React 화면을 새로고침하는 흐름입니다.
+`npm run preview`는 Vite preview 서버로 `dist/`를 띄웁니다. 데이터 소스를 바꾸는 방식은 동일하게 `uv run python -m src.run ...`을 먼저 다시 실행한 뒤 React 화면을 새로고침하는 흐름입니다.
 
 ---
 
@@ -111,13 +111,13 @@ npm run preview
 전체 PoC가 제대로 동작하는지 한 번에 확인합니다.
 
 ```powershell
-python scripts\validate_poc.py
+uv run python scripts\validate_poc.py
 ```
 
 개별 unit test만 돌릴 수도 있습니다.
 
 ```powershell
-python -m unittest discover -s tests
+uv run python -m unittest discover -s tests
 ```
 
 성공하면 `outputs/verification/latest_verification.json`에 검증 결과가 남습니다.
@@ -129,13 +129,13 @@ python -m unittest discover -s tests
 현재 Windows PC에서 허용된 metadata만 수집해 같은 탐지 엔진과 dashboard에 태웁니다.
 
 ```powershell
-python -m src.run --collect-local
+uv run python -m src.run --collect-local
 ```
 
 DNS cache까지 보고 싶을 때만 명시적으로 켭니다.
 
 ```powershell
-python -m src.run --collect-local --include-dns-cache
+uv run python -m src.run --collect-local --include-dns-cache
 ```
 
 수집하는 것:
@@ -166,23 +166,24 @@ Windows 수집 경로는 분리되어 있습니다.
 
 ## REST API / Swagger 계약
 
-현재 로컬 PoC는 CLI 실행을 기본으로 두고, 고객사별 업로드/조회 계약은 REST로 구현/문서화했습니다.
+현재 로컬 PoC는 CLI 실행을 기본으로 두고, 고객사별 업로드/조회 계약은 FastAPI REST로 구현했습니다.
 
 ```text
-docs/openapi.yaml
+/docs
+/openapi.json
 ```
 
 로컬 REST 서버 실행:
 
 ```powershell
-python scripts\run_service.py --seed-sample
+uv run python scripts\run_service.py --seed-sample
 ```
 
 구현된 endpoint:
 
 | Endpoint | 용도 |
 |---|---|
-| `GET /v1/health` | REST, SQLite, local-worker 상태 확인 |
+| `GET /v1/health` | REST, SQLite, local runner 상태 확인 |
 | `POST /v1/telemetry/events` | telemetry event batch 수신 후 분석 실행 |
 | `GET /v1/dashboard/latest` | SQLite에 저장된 최신 dashboard payload 조회 |
 | `GET /v1/incidents?severity=critical` | incident 조회 및 severity 필터 |
@@ -197,7 +198,7 @@ python scripts\run_service.py --seed-sample
 | `X-Agent-Version` | endpoint collector 버전 |
 | `X-Payload-Version` | telemetry schema 버전 |
 
-이 PoC에서는 REST/OpenAPI 계약만 현재 범위로 고정합니다. 추후 인프라 전환 항목은 현재 구현 범위에 넣지 않았습니다.
+이 PoC의 현재 API 범위는 REST와 FastAPI 자동 OpenAPI 문서입니다.
 
 ---
 
@@ -206,7 +207,7 @@ python scripts\run_service.py --seed-sample
 `.pcap` 파일을 읽어 TCP flow를 만들고, 평문 HTTP 요청이 있으면 `http_request` event로 변환합니다.
 
 ```powershell
-python -m src.run --pcap-file samples\some_capture.pcap
+uv run python -m src.run --pcap-file samples\some_capture.pcap
 ```
 
 담당 코드:
@@ -223,14 +224,14 @@ src/pcap_flow.py
 승인된 local proxy/CA 또는 테스트 proxy가 남긴 decrypted L7 metadata를 입력으로 받습니다.
 
 ```powershell
-python -m src.run --l7-file samples\decrypted_l7_records.json
+uv run python -m src.run --l7-file samples\decrypted_l7_records.json
 ```
 
 테스트용 explicit proxy도 포함되어 있습니다.
 
 ```powershell
-python scripts\https_inspection_proxy.py --certfile cert.pem --keyfile key.pem --output outputs\l7_proxy\records.jsonl
-python -m src.run --l7-file outputs\l7_proxy\records.jsonl
+uv run python scripts\https_inspection_proxy.py --certfile cert.pem --keyfile key.pem --output outputs\l7_proxy\records.jsonl
+uv run python -m src.run --l7-file outputs\l7_proxy\records.jsonl
 ```
 
 담당 코드:
@@ -392,17 +393,17 @@ security_edr_siem_poc/
 
 | 목적 | 명령어 |
 |------|--------|
-| sample data로 실행 | `python -m src.run` |
-| Windows metadata 수집 | `python -m src.run --collect-local` |
-| DNS cache 포함 | `python -m src.run --collect-local --include-dns-cache` |
-| L7 sample 포함 | `python -m src.run --l7-file samples\decrypted_l7_records.json` |
-| PCAP 포함 | `python -m src.run --pcap-file samples\some_capture.pcap` |
-| pipeline 전송 테스트 | `python -m src.run --ship-url http://127.0.0.1:9000/ingest` |
-| REST service 실행 | `python scripts\run_service.py --seed-sample` |
+| sample data로 실행 | `uv run python -m src.run` |
+| Windows metadata 수집 | `uv run python -m src.run --collect-local` |
+| DNS cache 포함 | `uv run python -m src.run --collect-local --include-dns-cache` |
+| L7 sample 포함 | `uv run python -m src.run --l7-file samples\decrypted_l7_records.json` |
+| PCAP 포함 | `uv run python -m src.run --pcap-file samples\some_capture.pcap` |
+| pipeline 전송 테스트 | `uv run python -m src.run --ship-url http://127.0.0.1:9000/ingest` |
+| REST service 실행 | `uv run python scripts\run_service.py --seed-sample` |
 | React build | `npm run build` |
 | React preview | `npm run preview` |
-| 전체 검증 | `python scripts\validate_poc.py` |
-| unit test | `python -m unittest discover -s tests` |
+| 전체 검증 | `uv run python scripts\validate_poc.py` |
+| unit test | `uv run python -m unittest discover -s tests` |
 
 ---
 
@@ -427,8 +428,8 @@ security_edr_siem_poc/
 - Threat intelligence는 `rules/threat_signatures.json`에 있는 sample signature set입니다.
 - MITRE ATT&CK mapping은 rule 기반 후보 매핑입니다.
 - Dashboard는 정적 HTML/JS와 React build를 함께 제공합니다. login, real-time streaming server는 없습니다.
-- DB는 현재 SQLite 로컬 파일(`outputs/service/layertrace.sqlite3`)입니다. 운영용 PostgreSQL/MySQL 전환은 별도 단계입니다.
-- Queue는 현재 SQLite task 상태와 local worker boundary입니다. RabbitMQ/Celery 전환은 별도 단계입니다.
+- DB는 현재 SQLAlchemy 기반 SQLite 로컬 파일(`outputs/service/layertrace.sqlite3`)입니다.
+- Queue는 현재 SQLite task 상태와 local task runner boundary입니다.
 - macOS packet capture는 실제 Mac에서 sudo/tcpdump 권한 검증이 필요합니다.
 
 ---

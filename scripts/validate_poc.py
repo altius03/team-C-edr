@@ -32,7 +32,6 @@ WEB_DASHBOARD_JSON_PATH = BASE_DIR / "web" / "public" / "latest-result.json"
 LATEST_REPORT_MD_PATH = BASE_DIR / "outputs" / "reports" / "latest" / "security_report.md"
 LATEST_REPORT_HTML_PATH = BASE_DIR / "outputs" / "reports" / "latest" / "security_report.html"
 LATEST_PIPELINE_BUNDLE_PATH = BASE_DIR / "outputs" / "pipeline" / "latest" / "telemetry_bundle.json.gz"
-OPENAPI_PATH = BASE_DIR / "docs" / "openapi.yaml"
 
 
 def main() -> int:
@@ -305,22 +304,29 @@ def _check_service_architecture() -> dict[str, Any]:
 
     with tempfile.TemporaryDirectory() as temp_dir:
         store = ServiceStore(Path(temp_dir) / "layertrace.sqlite3")
-        store.initialize()
-        task = store.enqueue_task("analysis", {"source": "validate_poc"})
-        claimed = store.claim_next_task()
-        if claimed is None or claimed.task_id != task.task_id:
-            failures.append("local queue did not claim the pending analysis task")
-        events, input_meta = load_events(BASE_DIR / "samples" / "default_events.json")
-        run_id = run_default_analysis_job(store, events=events, input_meta=input_meta)
-        store.complete_task(task.task_id, TaskStatus.SUCCEEDED, {"run_id": run_id})
-        latest = store.get_latest_run()
-        if not latest or latest.get("status") != "success":
-            failures.append("SQLite store did not persist the latest successful run")
-        if store.get_task(task.task_id).status != TaskStatus.SUCCEEDED:
-            failures.append("local queue did not persist the succeeded task state")
-        if not store.list_incidents(severity="critical"):
-            failures.append("SQLite incident query did not return critical incidents")
-        failures.extend(_check_service_http_surface(create_service_server, store, events))
+        try:
+            store.initialize()
+            task = store.enqueue_task("analysis", {"source": "validate_poc"})
+            claimed = store.claim_next_task()
+            if claimed is None or claimed.task_id != task.task_id:
+                failures.append("local queue did not claim the pending analysis task")
+            events, input_meta = load_events(BASE_DIR / "samples" / "default_events.json")
+            run_id = run_default_analysis_job(store, events=events, input_meta=input_meta)
+            store.complete_task(task.task_id, TaskStatus.SUCCEEDED, {"run_id": run_id})
+            latest = store.get_latest_run()
+            if not latest or latest.get("status") != "success":
+                failures.append("SQLite store did not persist the latest successful run")
+            if store.get_task(task.task_id).status != TaskStatus.SUCCEEDED:
+                failures.append("local queue did not persist the succeeded task state")
+            if not store.list_incidents(severity="critical"):
+                failures.append("SQLite incident query did not return critical incidents")
+            if store.count_dlq_events() < 1:
+                failures.append("SQLite DLQ table did not persist rejected telemetry")
+            if store.count_outbox_events() < 3:
+                failures.append("SQLite outbox_events table did not capture run/task events")
+            failures.extend(_check_service_http_surface(create_service_server, store, events))
+        finally:
+            store.close()
 
     return {
         "name": "service_architecture",
@@ -357,7 +363,7 @@ def _check_service_http_surface(create_service_server: Any, store: Any, events: 
         server.shutdown()
         thread.join(timeout=5)
         server.server_close()
-    if health.get("status") != "ok" or health.get("storage") != "sqlite" or health.get("framework") != "django":
+    if health.get("status") != "ok" or health.get("storage") != "sqlite" or health.get("framework") != "fastapi":
         failures.append(f"health endpoint returned unexpected payload: {health}")
     if dashboard.get("status") != "success":
         failures.append("dashboard latest endpoint did not return the saved successful run")
@@ -464,29 +470,39 @@ def _check_pipeline_artifacts(result: dict[str, Any]) -> dict[str, Any]:
 
 def _check_openapi_contract() -> dict[str, Any]:
     failures: list[str] = []
-    if not OPENAPI_PATH.exists():
-        failures.append(f"missing OpenAPI contract: {OPENAPI_PATH}")
-    else:
-        text = OPENAPI_PATH.read_text(encoding="utf-8")
-        for required in (
-            "openapi: 3.",
-            "/v1/telemetry/events",
-            "/v1/dashboard/latest",
-            "/v1/reports/latest",
-            "X-Customer-Id",
-            "X-Agent-Version",
-            "REST",
-            "sqlite",
-            "local-worker",
-        ):
-            if required not in text:
-                failures.append(f"OpenAPI contract missing: {required}")
-        if "future_transport" in text:
-            failures.append("OpenAPI contract still includes future transport")
+    try:
+        from src.api_app import create_app
+        from src.service_store import ServiceStore
+    except Exception as exc:
+        failures.append(f"FastAPI OpenAPI import failed: {exc}")
+    if not failures:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            store = ServiceStore(Path(temp_dir) / "layertrace.sqlite3")
+            try:
+                openapi = create_app(store).openapi()
+            finally:
+                store.close()
+            text = json.dumps(openapi, ensure_ascii=False)
+            for required in (
+                '"openapi":',
+                "/v1/telemetry/events",
+                "/v1/tasks/{task_id}",
+                "/v1/dashboard/latest",
+                "/v1/reports/latest",
+                "X-Customer-Id",
+                "X-Agent-Version",
+                "REST",
+                "sqlite",
+                "local-runner",
+            ):
+                if required not in text:
+                    failures.append(f"FastAPI OpenAPI contract missing: {required}")
+            if "future_transport" in text:
+                failures.append("OpenAPI contract still includes future transport")
     return {
         "name": "openapi_contract",
         "status": "pass" if not failures else "fail",
-        "details": "OpenAPI REST contract is documented." if not failures else failures,
+        "details": "FastAPI OpenAPI REST contract is generated." if not failures else failures,
     }
 
 
@@ -527,13 +543,13 @@ def _build_report(checks: list[dict[str, Any]], result: dict[str, Any]) -> dict[
             "gzip telemetry pipeline bundle",
             "static SIEM dashboard fed by latest CLI result",
             "React/TypeScript dashboard build with Vite runtime assets",
-            "SQLite service store for latest runs, incidents, and queued task state",
-            "local worker boundary that can later be replaced by a broker-backed worker",
+            "SQLAlchemy SQLite service store for runs, events, alerts, incidents, DLQ events, tasks, and outbox events",
+            "TaskQueue interface with LocalTaskRunner for current local analysis jobs",
             "REST health, latest dashboard, and incident query endpoints",
             "Markdown and HTML report artifacts generated from latest result",
             "SIEM query findings and Endpoint Egress Topology",
             "dashboard report modal with print-to-PDF flow",
-            "REST OpenAPI contract documented in docs/openapi.yaml",
+            "FastAPI generated OpenAPI contract exposed through /docs and /openapi.json",
         ],
         "next_user_required": [
             "Run the macOS agent on an actual Mac if packet-capture validation is required.",

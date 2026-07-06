@@ -1,45 +1,49 @@
 from __future__ import annotations
 
-import os
+import socket
 from socketserver import ThreadingMixIn
 from typing import TypeAlias
-from wsgiref.simple_server import WSGIRequestHandler, WSGIServer, make_server
 
-from django.core.handlers.wsgi import WSGIHandler
+import uvicorn
 
-from .django_backend.state import set_store
+from .api_app import create_app
 from .service_store import ServiceStore
 
 ServerAddress: TypeAlias = tuple[str, int]
 
 
-class ThreadingDjangoServer(ThreadingMixIn, WSGIServer):
+class FastApiServiceServer(ThreadingMixIn):
     daemon_threads = True
 
+    def __init__(self, address: ServerAddress, store: ServiceStore) -> None:
+        self._socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self._socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self._socket.bind(address)
+        self._socket.listen(socket.SOMAXCONN)
+        self.server_address = self._socket.getsockname()
+        app = create_app(store)
+        self._server = uvicorn.Server(
+            uvicorn.Config(
+                app,
+                host=self.server_address[0],
+                port=self.server_address[1],
+                log_level="warning",
+                lifespan="on",
+            )
+        )
 
-class QuietDjangoRequestHandler(WSGIRequestHandler):
-    def log_message(self, format: str, *args: object) -> None:
-        return
+    def serve_forever(self) -> None:
+        self._server.run(sockets=[self._socket])
+
+    def shutdown(self) -> None:
+        self._server.should_exit = True
+
+    def server_close(self) -> None:
+        try:
+            self._socket.close()
+        except OSError:
+            return
 
 
-def create_service_server(address: ServerAddress, store: ServiceStore) -> WSGIServer:
-    """Create the local API server using Django's WSGI request stack.
-
-    The public factory stays stable for tests and scripts, while URL routing,
-    request parsing, and JSON responses now live in the Django app under
-    src.django_backend.
-    """
-
-    os.environ.setdefault("DJANGO_SETTINGS_MODULE", "src.django_backend.settings")
-
-    import django
-
-    django.setup()
-    set_store(store)
-    return make_server(
-        address[0],
-        address[1],
-        WSGIHandler(),
-        server_class=ThreadingDjangoServer,
-        handler_class=QuietDjangoRequestHandler,
-    )
+def create_service_server(address: ServerAddress, store: ServiceStore) -> FastApiServiceServer:
+    return FastApiServiceServer(address, store)

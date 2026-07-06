@@ -93,21 +93,20 @@ export function App() {
         </div>
         <nav className="nav-list" aria-label="Dashboard sections">
           <a className="nav-item active" href="#overview">Overview</a>
+          <a className="nav-item" href="#topology">Topology</a>
+          <a className="nav-item" href="#detection">Detection</a>
+          <a className="nav-item" href="#alert-inspector">Alert Inspector</a>
           <a className="nav-item" href="#incidents">Incidents</a>
-          <a className="nav-item" href="#timeline">Timeline</a>
-          <a className="nav-item" href="#alerts">Alerts</a>
-          <a className="nav-item" href="#dlq">DLQ</a>
           <a className="nav-item" href="#reports">Reports</a>
+          <a className="nav-item" href="#event-volume">Event Volume</a>
+          <a className="nav-item" href="#response-playbook">Response Playbook</a>
+          <a className="nav-item" href="#endpoint-risk">Endpoint Risk</a>
+          <a className="nav-item" href="#timeline">Timeline</a>
+          <a className="nav-item" href="#threat-intel">MITRE/Domain/IP</a>
+          <a className="nav-item" href="#dlq">DLQ</a>
+          <a className="nav-item" href="#alerts">Alerts</a>
+          <a className="nav-item" href="#process-event">Process/Event</a>
         </nav>
-        <section className="source-panel" aria-label="Data source">
-          <p className="eyebrow">Data Source</p>
-          <strong>{result.source}</strong>
-          <span>데이터 소스 변경은 CLI를 다시 실행한 뒤 화면을 새로고침하는 방식입니다.</span>
-          <code>python -m src.run</code>
-          <code>python -m src.run --collect-local</code>
-          <code>python -m src.run --collect-local --include-dns-cache</code>
-          <code>python -m src.run --l7-file samples/decrypted_l7_records.json</code>
-        </section>
       </aside>
 
       <section className="workspace">
@@ -115,11 +114,12 @@ export function App() {
           <div>
             <p className="eyebrow">Current State</p>
             <h1>{stateLabel(result.edrState)}</h1>
-            <p className="subtitle">Run {result.status} / generated {formatTime(result.generatedAt)} / {result.decision}</p>
+            <p className="subtitle">실행 상태 {result.status} / 생성 {formatTime(result.generatedAt)} / 판단 {result.decision}</p>
+            <p className="source-note">데이터 출처: {result.source}</p>
           </div>
           <div className="topbar-right">
             <div className="selected-alert-pill">
-              <span>Selected alert</span>
+              <span>선택한 alert</span>
               <strong>{selectedAlert ? `${selectedAlert.ruleId} / ${selectedAlert.host}` : "none"}</strong>
             </div>
             <ReportModal
@@ -137,18 +137,12 @@ export function App() {
         </header>
 
         <section className="toolbar" aria-label="Dashboard filters">
-          <div className="segmented" aria-label="Time range">
-            {TIME_RANGES.map((range) => (
-              <button
-                className={timeRange === range ? "active" : ""}
-                key={range}
-                onClick={() => setTimeRange(range)}
-                type="button"
-              >
-                {TIME_RANGE_LABELS[range]}
-              </button>
-            ))}
-          </div>
+          <label className="select-field">
+            <span>Time range</span>
+            <select onChange={(event) => setTimeRange(toTimeRange(event.target.value))} value={timeRange}>
+              {TIME_RANGES.map((range) => <option key={range} value={range}>{TIME_RANGE_LABELS[range]}</option>)}
+            </select>
+          </label>
           <label className="select-field">
             <span>Endpoint</span>
             <select onChange={(event) => setHostFilter(event.target.value)} value={hostFilter}>
@@ -158,7 +152,7 @@ export function App() {
           </label>
           <label className="select-field">
             <span>Severity</span>
-            <select onChange={(event) => setSeverityFilter(event.target.value as SeverityFilter)} value={severityFilter}>
+            <select onChange={(event) => setSeverityFilter(toSeverityFilter(event.target.value))} value={severityFilter}>
               <option value="all">All severity</option>
               {SEVERITIES.map((severity) => <option key={severity} value={severity}>{severity}</option>)}
             </select>
@@ -170,28 +164,28 @@ export function App() {
         </section>
 
         <section className="kpi-grid" id="overview" aria-label="Security summary">
-          <Kpi accent="critical" detail="highest endpoint risk" icon={<Siren size={18} />} label="Risk peak" value={result.summary.highestRisk} />
-          <Kpi accent={actionPending ? "warning" : "neutral"} detail="critical or warning alerts" icon={<AlertTriangle size={18} />} label="Action pending" value={actionPending} />
-          <Kpi detail="validated telemetry" icon={<Activity size={18} />} label="Events" value={scopedEvents.length} />
-          <Kpi accent="critical" detail="visible alert scope" icon={<ShieldAlert size={18} />} label="Alerts" value={scopedAlerts.length} />
-          <Kpi detail="correlated cases" icon={<Workflow size={18} />} label="Incidents" value={scopedIncidents.length} />
-          <Kpi accent="warning" detail="schema review queue" icon={<Database size={18} />} label="DLQ" value={scopedDlq.length} />
+          <Kpi accent="critical" detail="가장 높은 endpoint risk" icon={<Siren size={18} />} label="Risk peak" value={result.summary.highestRisk} />
+          <Kpi accent={actionPending ? "warning" : "neutral"} detail="critical 또는 warning alerts" icon={<AlertTriangle size={18} />} label="Action pending" value={actionPending} />
+          <Kpi detail="검증된 telemetry" icon={<Activity size={18} />} label="Events" value={scopedEvents.length} />
+          <Kpi accent="critical" detail="현재 필터의 alert" icon={<ShieldAlert size={18} />} label="Alerts" value={scopedAlerts.length} />
+          <Kpi detail="상관 분석된 case" icon={<Workflow size={18} />} label="Incidents" value={scopedIncidents.length} />
+          <Kpi accent="warning" detail="schema 검토 대기열" icon={<Database size={18} />} label="DLQ" value={scopedDlq.length} />
         </section>
 
         <SignalStrip signals={buildSignals(result)} />
 
         <section className="hero-grid">
-          <article className="panel topology-panel">
+          <article className="panel topology-panel" id="topology">
             <PanelHeading
               chip={`${scopedTopology.edges.length} edges`}
               title="Endpoint Egress Topology"
-              subtitle="Endpoint fleet -> Protected tenant boundary -> External destinations"
+              subtitle="Endpoint fleet에서 Protected tenant boundary를 거쳐 External destinations로 나가는 흐름"
             />
             <TopologyCanvas nodes={scopedTopology.nodes} edges={scopedTopology.edges} />
           </article>
 
-          <article className="panel">
-            <PanelHeading chip={TIME_RANGE_LABELS[timeRange]} title="Detection Overview" subtitle="Severity, event volume, and MITRE coverage" />
+          <article className="panel" id="detection">
+            <PanelHeading chip={TIME_RANGE_LABELS[timeRange]} title="Detection Overview" subtitle="Severity, event volume, MITRE coverage를 한 화면에서 확인" />
             <SeverityChart active={severityFilter} counts={severityCounts} onSelect={setSeverityFilter} />
             <VolumeChart alerts={scopedAlerts} events={scopedEvents} />
             <CountBars kind="mitre" rows={result.mitreDistribution} />
@@ -199,18 +193,18 @@ export function App() {
         </section>
 
         <section className="content-grid">
-          <article className="panel">
-            <PanelHeading chip={selectedAlert?.severity} title="Alert Inspector" subtitle="Click an alert or severity to change this context" />
-            {selectedAlert ? <AlertInspector alert={selectedAlert} /> : <EmptyState label="No alert selected" />}
+          <article className="panel" id="alert-inspector">
+            <PanelHeading chip={selectedAlert?.severity} title="Alert Inspector" subtitle="alert 또는 severity를 선택하면 이 영역의 context가 즉시 바뀜" />
+            {selectedAlert ? <AlertInspector alert={selectedAlert} /> : <EmptyState label="선택된 alert가 없습니다" />}
           </article>
 
           <article className="panel" id="incidents">
-            <PanelHeading chip={`${scopedIncidents.length} cases`} title="Incident Workbench" subtitle="Correlated host sequence and risk context" />
+            <PanelHeading chip={`${scopedIncidents.length} cases`} title="Incident Workbench" subtitle="연결된 host 흐름과 risk context" />
             <IncidentQueue incidents={scopedIncidents} />
           </article>
 
           <article className="panel" id="reports">
-            <PanelHeading title="Report Center" subtitle="Open the generated report modal or save it as PDF" />
+            <PanelHeading title="Report Center" subtitle="생성된 report를 열고 모달 안에서 PDF로 저장" />
             <ReportCenter
               aiSummary={result.aiSummary}
               decision={result.decision}
@@ -227,66 +221,66 @@ export function App() {
         </section>
 
         <section className="wide-grid">
-          <article className="panel">
-            <PanelHeading chip={TIME_RANGE_LABELS[timeRange]} title="Event Volume" subtitle="Telemetry and alert count by observed hour" />
+          <article className="panel" id="event-volume">
+            <PanelHeading chip={TIME_RANGE_LABELS[timeRange]} title="Event Volume" subtitle="관측 시간대별 telemetry와 alert 수" />
             <VolumeChart alerts={scopedAlerts} events={scopedEvents} />
           </article>
 
-          <article className="panel">
-            <PanelHeading title="Response Playbook" subtitle="Local dry-run actions generated from the selected result" />
+          <article className="panel" id="response-playbook">
+            <PanelHeading title="Response Playbook" subtitle="선택된 결과에서 생성된 local dry-run 대응 액션" />
             <ResponsePlan actions={result.responseActions} />
           </article>
         </section>
 
         <section className="wide-grid">
-          <article className="panel">
-            <PanelHeading chip={`${scopedEndpointRisk.length} endpoints`} title="Endpoint Risk" subtitle="Risk score, alert count, incident count, and top rules" />
+          <article className="panel" id="endpoint-risk">
+            <PanelHeading chip={`${scopedEndpointRisk.length} endpoints`} title="Endpoint Risk" subtitle="Risk score, alert 수, incident 수, 주요 rule" />
             <EndpointRiskList rows={scopedEndpointRisk} />
           </article>
 
           <article className="panel" id="timeline">
-            <PanelHeading title="Attack Timeline" subtitle="Download, execution, command and control, exfiltration stages" />
+            <PanelHeading title="Attack Timeline" subtitle="Download, execution, command and control, exfiltration 단계" />
             <Timeline rows={scopedTimeline} />
           </article>
         </section>
 
-        <section className="content-grid">
+        <section className="content-grid" id="threat-intel">
           <article className="panel">
-            <PanelHeading title="MITRE ATT&CK" subtitle="Tactic coverage from matched rules" />
+            <PanelHeading title="MITRE ATT&CK" subtitle="매칭된 rule 기준 tactic coverage" />
             <CountBars kind="mitre" rows={result.mitreDistribution} />
           </article>
 
           <article className="panel">
-            <PanelHeading title="Top Domains" subtitle="Suspicious destination domains" />
+            <PanelHeading title="Top Domains" subtitle="의심스러운 외부 domain" />
             <CountBars kind="domain" rows={result.topDomains} />
           </article>
 
           <article className="panel">
-            <PanelHeading title="Top IPs" subtitle="Suspicious destination IP addresses" />
+            <PanelHeading title="Top IPs" subtitle="의심스러운 외부 IP 주소" />
             <CountBars kind="ip" rows={result.topIps} />
           </article>
         </section>
 
         <section className="wide-grid">
           <article className="panel" id="dlq">
-            <PanelHeading chip={`${scopedDlq.length} events`} title="DLQ Monitor" subtitle="Schema validation failures that must be corrected before ingestion" />
+            <PanelHeading chip={`${scopedDlq.length} events`} title="DLQ Monitor" subtitle="ingestion 전에 수정해야 하는 schema validation 실패" />
             <DlqMonitor rows={scopedDlq} />
           </article>
 
           <article className="panel" id="alerts">
-            <PanelHeading chip={`${scopedAlerts.length} visible`} title="Alert Explorer" subtitle="Severity click switches this list immediately" />
+            <PanelHeading chip={`${scopedAlerts.length} visible`} title="Alert Explorer" subtitle="severity 선택 시 목록이 즉시 전환됨" />
             <AlertList alerts={scopedAlerts} onSelect={setSelectedAlertId} selectedAlertId={selectedAlert?.alertId ?? ""} />
           </article>
         </section>
 
-        <section className="wide-grid">
+        <section className="wide-grid" id="process-event">
           <article className="panel">
-            <PanelHeading title="Process Tree" subtitle="Win32 process start telemetry correlated with endpoint evidence" />
+            <PanelHeading title="Process Tree" subtitle="endpoint evidence와 연결된 Win32 process start telemetry" />
             <ProcessTreePanel rows={scopedProcessTrees} />
           </article>
 
           <article className="panel" id="events">
-            <PanelHeading chip={`${scopedEvents.length} events`} title="Event Log" subtitle="Telemetry rows after time, endpoint, and search filters" />
+            <PanelHeading chip={`${scopedEvents.length} events`} title="Event Log" subtitle="time, endpoint, search 필터가 적용된 telemetry row" />
             <EventTable events={scopedEvents} />
           </article>
         </section>
@@ -445,6 +439,9 @@ function buildHostOptions(result: DashboardResult): ReadonlyMap<string, string> 
   for (const event of result.events) hosts.set(event.hostId, event.host);
   for (const alert of result.alerts) hosts.set(alert.hostId, alert.host);
   for (const row of result.processTrees) hosts.set(row.hostId, row.host);
+  for (const node of result.topology.nodes) {
+    if (node.layer.toLowerCase().includes("endpoint")) hosts.set(node.id, node.label);
+  }
   return hosts;
 }
 
@@ -478,6 +475,30 @@ function buildSignals(result: DashboardResult) {
       tone: result.aiSummary.highOrCriticalCount ? "critical" : "neutral"
     }
   ] as const;
+}
+
+function toTimeRange(value: string): TimeRange {
+  switch (value) {
+    case "last10m":
+    case "last1h":
+    case "last24h":
+    case "all":
+      return value;
+    default:
+      return "last24h";
+  }
+}
+
+function toSeverityFilter(value: string): SeverityFilter {
+  switch (value) {
+    case "critical":
+    case "warning":
+    case "suspicious":
+    case "info":
+      return value;
+    default:
+      return "all";
+  }
 }
 
 function stateLabel(state: string): string {

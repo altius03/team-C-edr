@@ -278,15 +278,19 @@ erDiagram
 
 ## 4. 현재 SQLite 저장소
 
-현재 SQLite는 전체 telemetry 원장을 정규화해서 모두 저장하지 않고, 서비스 조회와 작업 상태에 필요한 최소 테이블만 저장합니다.
+현재 SQLite는 dashboard 조회, incident 필터, task 상태, DLQ 확인, outbox 확장 경계를 위해 SQLAlchemy 모델로 관리합니다.
 
 | 테이블 | 주요 컬럼 | 용도 |
 |---|---|---|
 | `runs` | `run_id`, `generated_at`, `status`, `decision`, `payload` | 최신 dashboard/report payload 조회용 run 저장소 |
+| `events` | `run_id`, `event_id`, `event_type`, `host_id`, `event_time`, `process_name`, `destination`, `payload` | telemetry event 조회/집계용 저장소 |
+| `alerts` | `run_id`, `alert_id`, `rule_id`, `severity`, `risk_score`, `host_id`, `event_time`, `payload` | alert 조회/집계용 저장소 |
 | `incidents` | `run_id`, `incident_id`, `severity`, `risk_score`, `host_display_name`, `payload` | severity 필터가 가능한 incident 조회 |
-| `tasks` | `task_id`, `task_type`, `status`, `created_at`, `updated_at`, `payload`, `result`, `error` | RabbitMQ/Celery 도입 전 local worker task 상태 |
+| `dlq_events` | `run_id`, `dlq_id`, `event_id`, `error_code`, `payload` | schema validation 실패 event 확인 |
+| `tasks` | `task_id`, `task_type`, `status`, `created_at`, `updated_at`, `payload`, `result`, `error` | local task runner 상태 |
+| `outbox_events` | `outbox_id`, `event_type`, `aggregate_type`, `aggregate_id`, `status`, `created_at`, `payload` | event-driven 확장 경계 |
 
-`payload` 컬럼은 현재 PoC 단계에서 JSON을 그대로 보존합니다. 운영 DB로 전환할 때는 위 논리 ERD의 `ALERT_EVENT`, `INCIDENT_STAGE`, `INCIDENT_STAGE_EVENT` 같은 join table로 분리합니다.
+`payload` 컬럼은 React dashboard와 report가 기대하는 현재 result JSON 계약을 보존합니다.
 
 ---
 
@@ -373,7 +377,7 @@ sequenceDiagram
     participant Writer as result_writer
     participant Surface as Dashboard/Report
 
-    User->>Run: python -m src.run [options]
+    User->>Run: uv run python -m src.run [options]
     Run->>Collector: load sample or collect local/PCAP/L7
     Collector-->>Run: raw_events + input_meta
     Run->>Engine: analyze_events(raw_events, input_meta)
@@ -431,7 +435,7 @@ sequenceDiagram
 | 로컬 REST 조회 | `GET /v1/health`, `/v1/dashboard/latest`, `/v1/incidents`, `/v1/reports/latest` |
 | 로컬 REST 수집 | `POST /v1/telemetry/events` |
 | 인증/식별 | header metadata 기반 고객사/테넌트/에이전트 버전 식별 |
-| 문서 | `docs/openapi.yaml` |
+| 문서 | FastAPI `/docs`, `/openapi.json` |
 | 압축 | gzip bundle |
 | 헤더 | `X-Customer-Id`, `X-Tenant-Id`, `X-Agent-Version`, `X-Payload-Version` |
 
@@ -468,7 +472,7 @@ X-Payload-Version: 1.1
 
 ## 10. 설계상 주의점
 
-- 현재 SQLite DB는 `runs`, `incidents`, `tasks`만 물리 저장합니다. ERD의 `RUN_RESULT`, `ALERT_EVENT`, `INCIDENT_STAGE_EVENT`는 운영 저장소 도입 시 필요한 정규화 모델입니다.
+- 현재 SQLite DB는 `runs`, `events`, `alerts`, `incidents`, `dlq_events`, `tasks`, `outbox_events`를 물리 저장합니다.
 - `Alert.event_ids`는 현재 JSON 배열이지만 DB에서는 `ALERT_EVENT` join table로 분리하는 것이 맞습니다.
 - `Incident.detected_sequence`도 현재 JSON 배열이지만 DB에서는 `INCIDENT_STAGE`, `INCIDENT_STAGE_EVENT`로 분리하는 것이 맞습니다.
 - `DNS cache`는 Win32 process에서 파생되는 값이 아니라 별도 resolver/cache source입니다. correlation은 `host_id`, `process_name`, `domain`, `event_time` 기준입니다.

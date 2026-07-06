@@ -38,6 +38,8 @@ class ServiceArchitectureTests(unittest.TestCase):
             self.assertGreaterEqual(len(store.list_incidents(severity="critical")), 1)
             self.assertGreater(store.count_events(), 0)
             self.assertGreater(store.count_alerts(), 0)
+            self.assertGreater(store.count_dlq_events(), 0)
+            self.assertGreaterEqual(store.count_outbox_events(), 3)
             self.assertEqual(store.get_task(task.task_id).status, TaskStatus.SUCCEEDED)
 
     def test_service_api_exposes_health_dashboard_and_incidents(self) -> None:
@@ -75,8 +77,9 @@ class ServiceArchitectureTests(unittest.TestCase):
                 server.server_close()
 
             self.assertEqual(health["status"], "ok")
-            self.assertEqual(health["framework"], "django")
+            self.assertEqual(health["framework"], "fastapi")
             self.assertEqual(health["storage"], "sqlite")
+            self.assertEqual(health["queue"], "local-runner")
             self.assertEqual(dashboard["status"], "success")
             self.assertGreaterEqual(len(incidents["incidents"]), 1)
             self.assertEqual(report["pdf_export"], "browser_print_to_pdf")

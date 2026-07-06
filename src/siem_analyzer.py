@@ -46,8 +46,9 @@ def build_siem_analysis(
         },
         "api_contract": {
             "current_transport": "REST",
-            "swagger_path": "docs/openapi.yaml",
-            "note": "Local PoC documents REST ingestion for the current implementation.",
+            "swagger_path": "/docs",
+            "openapi_path": "/openapi.json",
+            "note": "Local PoC exposes REST ingestion through FastAPI generated OpenAPI.",
         },
     }
 

@@ -75,31 +75,32 @@ export function TopologyCanvas({
 }) {
   const endpointNodes = nodes.filter((node) => node.layer.toLowerCase().includes("endpoint")).slice(0, 4);
   const externalNodes = nodes.filter((node) => node.layer.toLowerCase().includes("external")).slice(0, 5);
-  const endpointPositions = positionNodes(endpointNodes, 128, 76, 236);
-  const externalPositions = positionNodes(externalNodes, 812, 76, 236);
+  const endpointPositions = positionNodes(endpointNodes, 150, 96, 328);
+  const externalPositions = positionNodes(externalNodes, 850, 96, 328);
   const sourceLookup = new Map(endpointPositions.map((node) => [node.id, node]));
   const targetLookup = new Map(externalPositions.flatMap((node) => [[node.id, node], [node.label, node]]));
   const flows = edges.length ? edges.slice(0, 10) : [];
 
   return (
     <div className="topology-stage">
-      <svg className="topology-svg" viewBox="0 0 960 320" role="img" aria-label="Endpoint egress topology">
+      <svg className="topology-svg" viewBox="0 0 1040 420" role="img" aria-label="Endpoint egress topology">
         <defs>
           <marker id="flow-arrow" markerHeight="7" markerWidth="8" orient="auto" refX="7" refY="3.5">
             <path className="flow-arrow" d="M 0 0 L 8 3.5 L 0 7 z" />
           </marker>
         </defs>
-        <text className="lane-label" x="128" y="28" textAnchor="middle">Endpoint fleet</text>
-        <text className="lane-label" x="480" y="28" textAnchor="middle">Protected tenant boundary</text>
-        <text className="lane-label" x="812" y="28" textAnchor="middle">External destinations</text>
-        <rect className="boundary-box" height="214" rx="10" width="170" x="395" y="62" />
-        <text className="boundary-title" x="480" y="142" textAnchor="middle">Tenant SIEM</text>
-        <text className="boundary-state" x="480" y="166" textAnchor="middle">inspection boundary</text>
+        <text className="lane-label" x="150" y="34" textAnchor="middle">Endpoint fleet</text>
+        <text className="lane-label boundary-label" x="520" y="34" textAnchor="middle">Protected tenant boundary</text>
+        <text className="lane-label" x="850" y="34" textAnchor="middle">External destinations</text>
+        <rect className="boundary-box" height="248" rx="10" width="180" x="430" y="86" />
+        <line className="boundary-axis" x1="430" x2="610" y1="210" y2="210" />
+        <text className="boundary-title" x="520" y="194" textAnchor="middle">Tenant SIEM</text>
+        <text className="boundary-state" x="520" y="218" textAnchor="middle">inspection boundary</text>
         {flows.map((edge, index) => {
           const source = sourceLookup.get(edge.source) ?? endpointPositions[index % Math.max(endpointPositions.length, 1)];
           const target = targetLookup.get(edge.target) ?? externalPositions[index % Math.max(externalPositions.length, 1)];
           if (!source || !target) return null;
-          const path = `M ${source.x + 27} ${source.y} C 292 ${source.y}, 342 166, 393 166 S 656 ${target.y}, ${target.x - 38} ${target.y}`;
+          const path = `M ${source.x + 30} ${source.y} C 310 ${source.y}, 370 210, 430 210 S 720 ${target.y}, ${target.x - 42} ${target.y}`;
           return <path className={`flow-line ${edgeState(edge)}`} d={path} key={`${edge.source}-${edge.target}-${index}`} />;
         })}
         {endpointPositions.map((node) => <GraphNode key={node.id} node={node} side="left" />)}
@@ -194,7 +195,7 @@ export function VolumeChart({
 }
 
 export function CountBars({ rows, kind }: { readonly rows: readonly CountRow[]; readonly kind: string }) {
-  if (!rows.length) return <EmptyState label="No ranked data in this scope" />;
+  if (!rows.length) return <EmptyState label="현재 필터 범위에 ranked data가 없습니다" />;
   const maxCount = Math.max(...rows.map((row) => row.count), 1);
   return (
     <div className="bar-list">
@@ -237,7 +238,7 @@ export function SignalStrip({
 }
 
 export function IncidentQueue({ incidents }: { readonly incidents: readonly Incident[] }) {
-  if (!incidents.length) return <EmptyState label="No incident in the selected scope" />;
+  if (!incidents.length) return <EmptyState label="선택한 범위에 incident가 없습니다" />;
   return (
     <div className="incident-queue">
       {incidents.slice(0, 4).map((incident) => (
@@ -258,7 +259,7 @@ export function IncidentQueue({ incidents }: { readonly incidents: readonly Inci
 }
 
 export function EndpointRiskList({ rows }: { readonly rows: readonly EndpointRisk[] }) {
-  if (!rows.length) return <EmptyState label="No endpoint risk row in this scope" />;
+  if (!rows.length) return <EmptyState label="현재 범위에 endpoint risk row가 없습니다" />;
   return (
     <div className="endpoint-risk-list">
       {rows.slice(0, 8).map((row) => (
@@ -283,7 +284,7 @@ export function EndpointRiskList({ rows }: { readonly rows: readonly EndpointRis
 }
 
 export function Timeline({ rows }: { readonly rows: readonly TimelineItem[] }) {
-  if (!rows.length) return <EmptyState label="No correlated attack timeline in this scope" />;
+  if (!rows.length) return <EmptyState label="현재 범위에 연결된 attack timeline이 없습니다" />;
   return (
     <div className="timeline">
       {rows.slice(0, 6).map((row, index) => (
@@ -299,7 +300,7 @@ export function Timeline({ rows }: { readonly rows: readonly TimelineItem[] }) {
 }
 
 export function DlqMonitor({ rows }: { readonly rows: readonly DlqEvent[] }) {
-  if (!rows.length) return <EmptyState label="No event is currently routed to DLQ" />;
+  if (!rows.length) return <EmptyState label="현재 DLQ로 이동한 event가 없습니다" />;
   return (
     <div className="dlq-list">
       {rows.map((row) => (
@@ -316,7 +317,7 @@ export function DlqMonitor({ rows }: { readonly rows: readonly DlqEvent[] }) {
 }
 
 export function ProcessTreePanel({ rows }: { readonly rows: readonly ProcessTreeRow[] }) {
-  if (!rows.length) return <EmptyState label="No process tree row in this scope" />;
+  if (!rows.length) return <EmptyState label="현재 범위에 process tree row가 없습니다" />;
   return (
     <div className="process-tree-list">
       {rows.slice(0, 10).map((row) => (
@@ -373,9 +374,9 @@ export function ReportCenter({
   return (
     <div className="report-center-panel">
       <div className="report-summary">
-        <strong>Analysis report generated</strong>
-        <p>Decision: {decision}</p>
-        <p>Includes Executive Summary, Endpoint Risk, SIEM Analysis, Alert Evidence, MITRE ATT&CK, DLQ, L7, AI, and Pipeline sections.</p>
+        <strong>분석 report가 생성되었습니다</strong>
+        <p>판단: {decision}</p>
+        <p>Executive Summary, Endpoint Risk, SIEM Analysis, Alert Evidence, MITRE ATT&CK, DLQ, L7, AI, Pipeline 섹션을 포함합니다.</p>
         <p>AI predictions: {aiSummary.predictionCount} / high {aiSummary.highOrCriticalCount} · Pipeline: {pipeline.compression} {formatBytes(pipeline.compressedBytes)}</p>
         <p className="mono">{fileName(htmlPath)} · {fileName(markdownPath)}</p>
       </div>
@@ -404,7 +405,7 @@ export function AlertList({
   readonly selectedAlertId: string;
   readonly onSelect: (alertId: string) => void;
 }) {
-  if (!alerts.length) return <EmptyState label="No alerts match the selected filters" />;
+  if (!alerts.length) return <EmptyState label="선택한 필터에 맞는 alert가 없습니다" />;
   return (
     <div className="alert-list">
       {alerts.slice(0, 18).map((alert) => (
@@ -424,7 +425,7 @@ export function AlertList({
 }
 
 export function EventTable({ events }: { readonly events: readonly EventRow[] }) {
-  if (!events.length) return <EmptyState label="No events match the selected filters" />;
+  if (!events.length) return <EmptyState label="선택한 필터에 맞는 event가 없습니다" />;
   return (
     <div className="table-wrap">
       <table>
@@ -456,7 +457,7 @@ export function EventTable({ events }: { readonly events: readonly EventRow[] })
 }
 
 export function ResponsePlan({ actions }: { readonly actions: readonly ResponseAction[] }) {
-  if (!actions.length) return <EmptyState label="No response action generated" />;
+  if (!actions.length) return <EmptyState label="생성된 response action이 없습니다" />;
   return (
     <div className="response-list">
       {actions.slice(0, 6).map((action, index) => (
@@ -526,13 +527,12 @@ export function ReportModal({
     <>
       <div className="report-actions">
         <button onClick={() => setOpen(true)} type="button"><FileText size={16} /> {triggerLabel}</button>
-        <button onClick={printReport} type="button"><Printer size={16} /> Save PDF</button>
       </div>
       {open ? (
         <div aria-modal="true" className="modal" onMouseDown={() => setOpen(false)} role="dialog">
           <section className="modal-card" onMouseDown={(event) => event.stopPropagation()}>
             <div className="modal-heading">
-              <PanelHeading title="LayerTrace EDR/SIEM report" subtitle="Current dashboard result, ready for browser PDF export" />
+              <PanelHeading title="LayerTrace EDR/SIEM report" subtitle="현재 dashboard 결과를 브라우저 PDF로 저장할 수 있습니다" />
               <button aria-label="Close report" className="icon-button" onClick={() => setOpen(false)} type="button">
                 <X size={16} />
               </button>
@@ -546,13 +546,13 @@ export function ReportModal({
                   <div><span>Alerts</span><strong>{summary.alerts}</strong></div>
                   <div><span>Incidents</span><strong>{summary.incidents}</strong></div>
                 </div>
-                <p>Decision: {decision}</p>
+                <p>판단: {decision}</p>
                 <p>Customer {telemetry.customerId} · Tenant {telemetry.tenantId} · Agent {telemetry.agentVersion} · Payload {telemetry.payloadVersion}</p>
               </section>
               <section className="print-section">
                 <h3>Endpoint Egress Topology</h3>
-                <p>{topologySummary.endpointCount} endpoints, {topologySummary.externalDestinationCount} external destinations, {topologySummary.alertEdgeCount} alert edges.</p>
-                <p>Pipeline {pipeline.compression} · {formatBytes(pipeline.compressedBytes)} compressed · ship {pipeline.shipStatus}</p>
+                <p>{topologySummary.endpointCount} endpoints, 외부 목적지 {topologySummary.externalDestinationCount}개, alert edge {topologySummary.alertEdgeCount}개입니다.</p>
+                <p>Pipeline {pipeline.compression} · {formatBytes(pipeline.compressedBytes)} 압축 · ship {pipeline.shipStatus}</p>
               </section>
               <section className="print-section">
                 <h3>SIEM query findings</h3>
@@ -561,9 +561,9 @@ export function ReportModal({
                     <article className="modal-finding" key={finding.queryId}>
                       <strong>{finding.queryId} · {finding.title}</strong>
                       <span>{finding.host} · {finding.severity} · evidence {finding.evidenceCount}</span>
-                      <p>{finding.summary || "No summary"}</p>
+                      <p>{finding.summary || "요약이 없습니다"}</p>
                     </article>
-                  )) : <EmptyState label="No SIEM finding is available" />}
+                  )) : <EmptyState label="표시할 SIEM finding이 없습니다" />}
                 </div>
               </section>
               <section className="print-section">
@@ -574,7 +574,7 @@ export function ReportModal({
             </div>
             <div className="modal-actions">
               <button onClick={printReport} type="button"><Printer size={16} /> Save PDF</button>
-              <button onClick={() => setOpen(false)} type="button">Close</button>
+              <button onClick={() => setOpen(false)} type="button">닫기</button>
             </div>
           </section>
         </div>

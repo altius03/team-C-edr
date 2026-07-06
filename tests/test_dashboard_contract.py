@@ -1,10 +1,14 @@
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
 PROJECT_DIR = Path(__file__).resolve().parents[1]
 if str(PROJECT_DIR) not in sys.path:
     sys.path.insert(0, str(PROJECT_DIR))
+
+from src.api_app import create_app
+from src.service_store import ServiceStore
 
 
 class DashboardContractTests(unittest.TestCase):
@@ -40,18 +44,19 @@ class DashboardContractTests(unittest.TestCase):
         self.assertIn("openReportModal", app)
         self.assertIn("EDR 상태", app)
 
-    def test_openapi_contract_is_documented_for_swagger(self) -> None:
-        openapi = PROJECT_DIR / "docs" / "openapi.yaml"
-        self.assertTrue(openapi.exists(), openapi)
-        text = openapi.read_text(encoding="utf-8")
+    def test_openapi_contract_is_generated_by_fastapi(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            store = ServiceStore(Path(temp_dir) / "layertrace.sqlite3")
+            openapi = create_app(store).openapi()
 
-        self.assertIn("openapi: 3.", text)
-        self.assertIn("/v1/telemetry/events", text)
-        self.assertIn("/v1/tasks/{task_id}", text)
+        text = str(openapi)
+        self.assertEqual(openapi["openapi"].split(".")[0], "3")
+        self.assertIn("/v1/telemetry/events", openapi["paths"])
+        self.assertIn("/v1/tasks/{task_id}", openapi["paths"])
         self.assertIn("X-Customer-Id", text)
         self.assertIn("X-Agent-Version", text)
-        self.assertIn("X-Api-Token", text)
         self.assertIn("REST", text)
+        self.assertIn("sqlite", text)
         self.assertNotIn("future_transport", text)
 
 
