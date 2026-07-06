@@ -1,15 +1,24 @@
 import { FileText, Printer, X } from "lucide-react";
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import {
   type Alert,
+  type AiSummary,
   type CountRow,
+  type DlqEvent,
+  type EdrState,
+  type EndpointRisk,
   type EventRow,
   type Incident,
+  type PipelineDelivery,
+  type ProcessTreeRow,
+  type QueryFinding,
   type ResponseAction,
   type Severity,
+  type TelemetryMetadata,
   type TimelineItem,
   type TopologyEdge,
-  type TopologyNode
+  type TopologyNode,
+  type TopologySummary
 } from "./resultAdapter";
 
 const SEVERITY_ORDER: readonly Severity[] = ["critical", "warning", "suspicious", "info"];
@@ -185,6 +194,7 @@ export function VolumeChart({
 }
 
 export function CountBars({ rows, kind }: { readonly rows: readonly CountRow[]; readonly kind: string }) {
+  if (!rows.length) return <EmptyState label="No ranked data in this scope" />;
   const maxCount = Math.max(...rows.map((row) => row.count), 1);
   return (
     <div className="bar-list">
@@ -200,6 +210,29 @@ export function CountBars({ rows, kind }: { readonly rows: readonly CountRow[]; 
         </div>
       ))}
     </div>
+  );
+}
+
+export function SignalStrip({
+  signals
+}: {
+  readonly signals: readonly {
+    readonly label: string;
+    readonly value: string;
+    readonly detail: string;
+    readonly tone: Severity | "neutral";
+  }[];
+}) {
+  return (
+    <section className="signal-strip" aria-label="EDR SIEM signal health">
+      {signals.map((signal) => (
+        <article className={`signal-card ${signal.tone}`} key={signal.label}>
+          <span>{signal.label}</span>
+          <strong>{signal.value}</strong>
+          <small>{signal.detail}</small>
+        </article>
+      ))}
+    </section>
   );
 }
 
@@ -224,6 +257,31 @@ export function IncidentQueue({ incidents }: { readonly incidents: readonly Inci
   );
 }
 
+export function EndpointRiskList({ rows }: { readonly rows: readonly EndpointRisk[] }) {
+  if (!rows.length) return <EmptyState label="No endpoint risk row in this scope" />;
+  return (
+    <div className="endpoint-risk-list">
+      {rows.slice(0, 8).map((row) => (
+        <article className="endpoint-risk-row" key={row.hostId}>
+          <div className="row-top">
+            <strong>{row.host}</strong>
+            <span className={`pill ${row.severity}`}>{row.severity}</span>
+          </div>
+          <div className="score-track" aria-label={`Risk score ${row.riskScore}`}>
+            <span className={`score-fill ${row.severity}`} style={{ width: `${clamp(row.riskScore)}%` }} />
+          </div>
+          <div className="risk-meta">
+            <span>Risk <strong>{row.riskScore}</strong>/100</span>
+            <span>Alert {row.alerts}</span>
+            <span>Incident {row.incidents}</span>
+          </div>
+          <small>Rules: {row.topRules.join(", ") || "not detected"}</small>
+        </article>
+      ))}
+    </div>
+  );
+}
+
 export function Timeline({ rows }: { readonly rows: readonly TimelineItem[] }) {
   if (!rows.length) return <EmptyState label="No correlated attack timeline in this scope" />;
   return (
@@ -234,6 +292,41 @@ export function Timeline({ rows }: { readonly rows: readonly TimelineItem[] }) {
           <strong>{row.stage.replace(/_/g, " ")}</strong>
           <p>{row.summary}</p>
           <small>{row.host} / {formatTime(row.time)}</small>
+        </article>
+      ))}
+    </div>
+  );
+}
+
+export function DlqMonitor({ rows }: { readonly rows: readonly DlqEvent[] }) {
+  if (!rows.length) return <EmptyState label="No event is currently routed to DLQ" />;
+  return (
+    <div className="dlq-list">
+      {rows.map((row) => (
+        <article className="dlq-row" key={`${row.eventId}-${row.index}`}>
+          <div className="row-top">
+            <strong>{row.eventId}</strong>
+            <span className="pill warning">{row.code}</span>
+          </div>
+          <p>{row.errors.join(" / ") || "Schema validation failed"}</p>
+        </article>
+      ))}
+    </div>
+  );
+}
+
+export function ProcessTreePanel({ rows }: { readonly rows: readonly ProcessTreeRow[] }) {
+  if (!rows.length) return <EmptyState label="No process tree row in this scope" />;
+  return (
+    <div className="process-tree-list">
+      {rows.slice(0, 10).map((row) => (
+        <article className="process-row" key={`${row.eventId}-${row.processName}`}>
+          <div className="process-main">
+            <strong>{row.parentProcess} {"->"} {row.processName}</strong>
+            <span className={`pill ${row.signed ? "info" : "suspicious"}`}>{row.signed ? "signed" : "unsigned"}</span>
+          </div>
+          <small>{row.host} / {formatTime(row.eventTime)}</small>
+          <code>{row.processPath || "path not available"}</code>
         </article>
       ))}
     </div>
@@ -261,6 +354,43 @@ export function AlertInspector({ alert }: { readonly alert: Alert }) {
       <ul>
         {alert.evidence.slice(0, 5).map((line) => <li key={line}>{line}</li>)}
       </ul>
+    </div>
+  );
+}
+
+export function ReportCenter({
+  aiSummary,
+  decision,
+  edrState,
+  htmlPath,
+  markdownPath,
+  pipeline,
+  queryFindings,
+  summary,
+  telemetry,
+  topologySummary
+}: ReportModalProps & { readonly aiSummary: AiSummary }) {
+  return (
+    <div className="report-center-panel">
+      <div className="report-summary">
+        <strong>Analysis report generated</strong>
+        <p>Decision: {decision}</p>
+        <p>Includes Executive Summary, Endpoint Risk, SIEM Analysis, Alert Evidence, MITRE ATT&CK, DLQ, L7, AI, and Pipeline sections.</p>
+        <p>AI predictions: {aiSummary.predictionCount} / high {aiSummary.highOrCriticalCount} · Pipeline: {pipeline.compression} {formatBytes(pipeline.compressedBytes)}</p>
+        <p className="mono">{fileName(htmlPath)} · {fileName(markdownPath)}</p>
+      </div>
+      <ReportModal
+        decision={decision}
+        edrState={edrState}
+        htmlPath={htmlPath}
+        markdownPath={markdownPath}
+        pipeline={pipeline}
+        queryFindings={queryFindings}
+        summary={summary}
+        telemetry={telemetry}
+        topologySummary={topologySummary}
+        triggerLabel="Open report"
+      />
     </div>
   );
 }
@@ -347,30 +477,103 @@ export function EmptyState({ label }: { readonly label: string }) {
   return <div className="empty-state">{label}</div>;
 }
 
-export function ReportModal({ htmlPath, markdownPath }: { readonly htmlPath: string; readonly markdownPath: string }) {
+type ReportModalProps = {
+  readonly decision: string;
+  readonly edrState: EdrState;
+  readonly htmlPath: string;
+  readonly markdownPath: string;
+  readonly pipeline: PipelineDelivery;
+  readonly queryFindings: readonly QueryFinding[];
+  readonly summary: {
+    readonly alerts: number;
+    readonly incidents: number;
+    readonly highestRisk: number;
+  };
+  readonly telemetry: TelemetryMetadata;
+  readonly topologySummary: TopologySummary;
+  readonly triggerLabel?: string;
+};
+
+export function ReportModal({
+  decision,
+  edrState,
+  htmlPath,
+  markdownPath,
+  pipeline,
+  queryFindings,
+  summary,
+  telemetry,
+  topologySummary,
+  triggerLabel = "Open report"
+}: ReportModalProps) {
   const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [open]);
+
+  const printReport = () => {
+    setOpen(true);
+    window.setTimeout(() => window.print(), 50);
+  };
+
   return (
     <>
       <div className="report-actions">
-        <button onClick={() => setOpen(true)} type="button"><FileText size={16} /> Open report</button>
-        <button onClick={() => window.print()} type="button"><Printer size={16} /> Save PDF</button>
+        <button onClick={() => setOpen(true)} type="button"><FileText size={16} /> {triggerLabel}</button>
+        <button onClick={printReport} type="button"><Printer size={16} /> Save PDF</button>
       </div>
       {open ? (
-        <div aria-modal="true" className="modal" role="dialog">
-          <section className="modal-card">
+        <div aria-modal="true" className="modal" onMouseDown={() => setOpen(false)} role="dialog">
+          <section className="modal-card" onMouseDown={(event) => event.stopPropagation()}>
             <div className="modal-heading">
-              <PanelHeading title="LayerTrace report" subtitle="Use print to save this report as PDF" />
+              <PanelHeading title="LayerTrace EDR/SIEM report" subtitle="Current dashboard result, ready for browser PDF export" />
               <button aria-label="Close report" className="icon-button" onClick={() => setOpen(false)} type="button">
                 <X size={16} />
               </button>
             </div>
-            <div className="report-summary">
-              <strong>Current generated report</strong>
-              <p>HTML: {htmlPath}</p>
-              <p>Markdown: {markdownPath}</p>
+            <div className="modal-body">
+              <section className="print-section">
+                <h3>Executive summary</h3>
+                <div className="report-stat-grid">
+                  <div><span>EDR State</span><strong>{edrState}</strong></div>
+                  <div><span>Highest risk</span><strong>{summary.highestRisk}</strong></div>
+                  <div><span>Alerts</span><strong>{summary.alerts}</strong></div>
+                  <div><span>Incidents</span><strong>{summary.incidents}</strong></div>
+                </div>
+                <p>Decision: {decision}</p>
+                <p>Customer {telemetry.customerId} · Tenant {telemetry.tenantId} · Agent {telemetry.agentVersion} · Payload {telemetry.payloadVersion}</p>
+              </section>
+              <section className="print-section">
+                <h3>Endpoint Egress Topology</h3>
+                <p>{topologySummary.endpointCount} endpoints, {topologySummary.externalDestinationCount} external destinations, {topologySummary.alertEdgeCount} alert edges.</p>
+                <p>Pipeline {pipeline.compression} · {formatBytes(pipeline.compressedBytes)} compressed · ship {pipeline.shipStatus}</p>
+              </section>
+              <section className="print-section">
+                <h3>SIEM query findings</h3>
+                <div className="finding-list">
+                  {queryFindings.length ? queryFindings.slice(0, 8).map((finding) => (
+                    <article className="modal-finding" key={finding.queryId}>
+                      <strong>{finding.queryId} · {finding.title}</strong>
+                      <span>{finding.host} · {finding.severity} · evidence {finding.evidenceCount}</span>
+                      <p>{finding.summary || "No summary"}</p>
+                    </article>
+                  )) : <EmptyState label="No SIEM finding is available" />}
+                </div>
+              </section>
+              <section className="print-section">
+                <h3>Report artifacts</h3>
+                <p className="mono">HTML: {htmlPath}</p>
+                <p className="mono">Markdown: {markdownPath}</p>
+              </section>
             </div>
             <div className="modal-actions">
-              <button onClick={() => window.print()} type="button"><Printer size={16} /> Save PDF</button>
+              <button onClick={printReport} type="button"><Printer size={16} /> Save PDF</button>
               <button onClick={() => setOpen(false)} type="button">Close</button>
             </div>
           </section>
@@ -452,6 +655,14 @@ function formatBytes(value: number): string {
   if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)} MB`;
   if (value >= 1_000) return `${(value / 1_000).toFixed(1)} KB`;
   return `${value} B`;
+}
+
+function clamp(value: number): number {
+  return Math.min(100, Math.max(0, value));
+}
+
+function fileName(value: string): string {
+  return value.split(/[\\/]/).pop() || value;
 }
 
 function stateLabel(state: string): string {

@@ -1,17 +1,22 @@
-import { Activity, Database, Radar, ShieldAlert, Siren, Workflow } from "lucide-react";
+import { Activity, AlertTriangle, Database, Radar, ShieldAlert, Siren, Workflow } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import {
   AlertInspector,
   AlertList,
   CountBars,
+  DlqMonitor,
   EmptyState,
+  EndpointRiskList,
   EventTable,
   IncidentQueue,
   Kpi,
   PanelHeading,
+  ProcessTreePanel,
+  ReportCenter,
   ReportModal,
   ResponsePlan,
   SeverityChart,
+  SignalStrip,
   Timeline,
   TopologyCanvas,
   VolumeChart
@@ -19,20 +24,26 @@ import {
 import {
   type Alert,
   type DashboardResult,
+  type DlqEvent,
+  type EndpointRisk,
   type EventRow,
+  type Incident,
+  type ProcessTreeRow,
   type Severity,
+  type TimelineItem,
   loadDashboardResult,
   readDashboardResult
 } from "./resultAdapter";
 
-type TimeRange = "last10m" | "last1h" | "last24h";
+type TimeRange = "last10m" | "last1h" | "last24h" | "all";
 type SeverityFilter = Severity | "all";
 
-const TIME_RANGES: readonly TimeRange[] = ["last10m", "last1h", "last24h"];
+const TIME_RANGES: readonly TimeRange[] = ["last10m", "last1h", "last24h", "all"];
 const TIME_RANGE_LABELS: Readonly<Record<TimeRange, string>> = {
   last10m: "Last 10m",
   last1h: "Last 1h",
-  last24h: "Last 24h"
+  last24h: "Last 24h",
+  all: "All"
 };
 
 const SEVERITIES: readonly Severity[] = ["critical", "warning", "suspicious", "info"];
@@ -56,14 +67,19 @@ export function App() {
 
   const latestObservedAt = useMemo(() => latestObservedTime(result), [result]);
   const hostOptions = useMemo(() => buildHostOptions(result), [result]);
-  const scopedAlerts = result.alerts.filter((alert) => matchesScope(alert, hostFilter, severityFilter, search, timeRange, latestObservedAt));
-  const scopedEvents = result.events.filter((event) => matchesEventScope(event, hostFilter, search, timeRange, latestObservedAt));
-  const scopedIncidents = result.incidents.filter(
-    (incident) => (hostFilter === "all" || incident.hostId === hostFilter) && (severityFilter === "all" || incident.severity === severityFilter)
-  );
-  const scopedTimeline = result.timeline.filter((item) => hostFilter === "all" || hostOptions.get(hostFilter) === item.host);
+  const query = search.trim().toLowerCase();
+  const scopedAlerts = result.alerts.filter((alert) => matchesAlertScope(alert, hostFilter, severityFilter, query, timeRange, latestObservedAt));
+  const scopedEvents = result.events.filter((event) => matchesEventScope(event, hostFilter, query, timeRange, latestObservedAt));
+  const activeHostIds = new Set([...scopedAlerts.map((alert) => alert.hostId), ...scopedEvents.map((event) => event.hostId)]);
+  const scopedIncidents = result.incidents.filter((incident) => matchesIncidentScope(incident, hostFilter, severityFilter, query));
+  const scopedTimeline = result.timeline.filter((item) => matchesTimelineScope(item, hostOptions, hostFilter, severityFilter, query, timeRange, latestObservedAt));
+  const scopedEndpointRisk = result.endpointRisk.filter((row) => matchesEndpointRiskScope(row, hostFilter, severityFilter, query, activeHostIds));
+  const scopedProcessTrees = result.processTrees.filter((row) => matchesProcessScope(row, hostFilter, query, timeRange, latestObservedAt));
+  const scopedDlq = result.dlqEvents.filter((row) => matchesDlqScope(row, query));
+  const scopedTopology = scopeTopology(result.topology, hostFilter, query, activeHostIds);
   const severityCounts = countSeverity(scopedAlerts);
-  const selectedAlert = scopedAlerts.find((alert) => alert.alertId === selectedAlertId) ?? scopedAlerts[0] ?? result.alerts[0];
+  const selectedAlert = scopedAlerts.find((alert) => alert.alertId === selectedAlertId) ?? scopedAlerts[0];
+  const actionPending = scopedAlerts.filter((alert) => alert.severity === "critical" || alert.severity === "warning").length;
 
   return (
     <main className="app-shell">
@@ -79,7 +95,9 @@ export function App() {
           <a className="nav-item active" href="#overview">Overview</a>
           <a className="nav-item" href="#incidents">Incidents</a>
           <a className="nav-item" href="#timeline">Timeline</a>
-          <a className="nav-item" href="#events">Event log</a>
+          <a className="nav-item" href="#alerts">Alerts</a>
+          <a className="nav-item" href="#dlq">DLQ</a>
+          <a className="nav-item" href="#reports">Reports</a>
         </nav>
         <section className="source-panel" aria-label="Data source">
           <p className="eyebrow">Data Source</p>
@@ -88,6 +106,7 @@ export function App() {
           <code>python -m src.run</code>
           <code>python -m src.run --collect-local</code>
           <code>python -m src.run --collect-local --include-dns-cache</code>
+          <code>python -m src.run --l7-file samples/decrypted_l7_records.json</code>
         </section>
       </aside>
 
@@ -103,7 +122,17 @@ export function App() {
               <span>Selected alert</span>
               <strong>{selectedAlert ? `${selectedAlert.ruleId} / ${selectedAlert.host}` : "none"}</strong>
             </div>
-            <ReportModal htmlPath={result.report.htmlPath} markdownPath={result.report.markdownPath} />
+            <ReportModal
+              decision={result.decision}
+              edrState={result.edrState}
+              htmlPath={result.report.htmlPath}
+              markdownPath={result.report.markdownPath}
+              pipeline={result.pipeline}
+              queryFindings={result.queryFindings}
+              summary={result.summary}
+              telemetry={result.telemetry}
+              topologySummary={result.topology.summary}
+            />
           </div>
         </header>
 
@@ -127,6 +156,13 @@ export function App() {
               {[...hostOptions.entries()].map(([hostId, hostLabel]) => <option key={hostId} value={hostId}>{hostLabel}</option>)}
             </select>
           </label>
+          <label className="select-field">
+            <span>Severity</span>
+            <select onChange={(event) => setSeverityFilter(event.target.value as SeverityFilter)} value={severityFilter}>
+              <option value="all">All severity</option>
+              {SEVERITIES.map((severity) => <option key={severity} value={severity}>{severity}</option>)}
+            </select>
+          </label>
           <label className="search-field">
             <span>Search</span>
             <input onChange={(event) => setSearch(event.target.value)} placeholder="domain, process, rule" type="search" value={search} />
@@ -135,21 +171,23 @@ export function App() {
 
         <section className="kpi-grid" id="overview" aria-label="Security summary">
           <Kpi accent="critical" detail="highest endpoint risk" icon={<Siren size={18} />} label="Risk peak" value={result.summary.highestRisk} />
+          <Kpi accent={actionPending ? "warning" : "neutral"} detail="critical or warning alerts" icon={<AlertTriangle size={18} />} label="Action pending" value={actionPending} />
+          <Kpi detail="validated telemetry" icon={<Activity size={18} />} label="Events" value={scopedEvents.length} />
           <Kpi accent="critical" detail="visible alert scope" icon={<ShieldAlert size={18} />} label="Alerts" value={scopedAlerts.length} />
           <Kpi detail="correlated cases" icon={<Workflow size={18} />} label="Incidents" value={scopedIncidents.length} />
-          <Kpi detail="validated telemetry" icon={<Activity size={18} />} label="Events" value={scopedEvents.length} />
-          <Kpi accent="warning" detail="schema review queue" icon={<Database size={18} />} label="DLQ" value={result.summary.dlq} />
-          <Kpi detail="dry-run playbook actions" icon={<Radar size={18} />} label="Responses" value={result.summary.responseActions} />
+          <Kpi accent="warning" detail="schema review queue" icon={<Database size={18} />} label="DLQ" value={scopedDlq.length} />
         </section>
+
+        <SignalStrip signals={buildSignals(result)} />
 
         <section className="hero-grid">
           <article className="panel topology-panel">
             <PanelHeading
-              chip={`${result.topology.edges.length} edges`}
+              chip={`${scopedTopology.edges.length} edges`}
               title="Endpoint Egress Topology"
               subtitle="Endpoint fleet -> Protected tenant boundary -> External destinations"
             />
-            <TopologyCanvas nodes={result.topology.nodes} edges={result.topology.edges} />
+            <TopologyCanvas nodes={scopedTopology.nodes} edges={scopedTopology.edges} />
           </article>
 
           <article className="panel">
@@ -171,19 +209,27 @@ export function App() {
             <IncidentQueue incidents={scopedIncidents} />
           </article>
 
-          <article className="panel">
-            <PanelHeading title="Top Destinations" subtitle="Suspicious domains and IP addresses" />
-            <div className="dual-list">
-              <CountBars kind="domain" rows={result.topDomains} />
-              <CountBars kind="ip" rows={result.topIps} />
-            </div>
+          <article className="panel" id="reports">
+            <PanelHeading title="Report Center" subtitle="Open the generated report modal or save it as PDF" />
+            <ReportCenter
+              aiSummary={result.aiSummary}
+              decision={result.decision}
+              edrState={result.edrState}
+              htmlPath={result.report.htmlPath}
+              markdownPath={result.report.markdownPath}
+              pipeline={result.pipeline}
+              queryFindings={result.queryFindings}
+              summary={result.summary}
+              telemetry={result.telemetry}
+              topologySummary={result.topology.summary}
+            />
           </article>
         </section>
 
         <section className="wide-grid">
-          <article className="panel" id="timeline">
-            <PanelHeading title="Attack Timeline" subtitle="Download, execution, command and control, exfiltration stages" />
-            <Timeline rows={scopedTimeline} />
+          <article className="panel">
+            <PanelHeading chip={TIME_RANGE_LABELS[timeRange]} title="Event Volume" subtitle="Telemetry and alert count by observed hour" />
+            <VolumeChart alerts={scopedAlerts} events={scopedEvents} />
           </article>
 
           <article className="panel">
@@ -194,8 +240,49 @@ export function App() {
 
         <section className="wide-grid">
           <article className="panel">
+            <PanelHeading chip={`${scopedEndpointRisk.length} endpoints`} title="Endpoint Risk" subtitle="Risk score, alert count, incident count, and top rules" />
+            <EndpointRiskList rows={scopedEndpointRisk} />
+          </article>
+
+          <article className="panel" id="timeline">
+            <PanelHeading title="Attack Timeline" subtitle="Download, execution, command and control, exfiltration stages" />
+            <Timeline rows={scopedTimeline} />
+          </article>
+        </section>
+
+        <section className="content-grid">
+          <article className="panel">
+            <PanelHeading title="MITRE ATT&CK" subtitle="Tactic coverage from matched rules" />
+            <CountBars kind="mitre" rows={result.mitreDistribution} />
+          </article>
+
+          <article className="panel">
+            <PanelHeading title="Top Domains" subtitle="Suspicious destination domains" />
+            <CountBars kind="domain" rows={result.topDomains} />
+          </article>
+
+          <article className="panel">
+            <PanelHeading title="Top IPs" subtitle="Suspicious destination IP addresses" />
+            <CountBars kind="ip" rows={result.topIps} />
+          </article>
+        </section>
+
+        <section className="wide-grid">
+          <article className="panel" id="dlq">
+            <PanelHeading chip={`${scopedDlq.length} events`} title="DLQ Monitor" subtitle="Schema validation failures that must be corrected before ingestion" />
+            <DlqMonitor rows={scopedDlq} />
+          </article>
+
+          <article className="panel" id="alerts">
             <PanelHeading chip={`${scopedAlerts.length} visible`} title="Alert Explorer" subtitle="Severity click switches this list immediately" />
             <AlertList alerts={scopedAlerts} onSelect={setSelectedAlertId} selectedAlertId={selectedAlert?.alertId ?? ""} />
+          </article>
+        </section>
+
+        <section className="wide-grid">
+          <article className="panel">
+            <PanelHeading title="Process Tree" subtitle="Win32 process start telemetry correlated with endpoint evidence" />
+            <ProcessTreePanel rows={scopedProcessTrees} />
           </article>
 
           <article className="panel" id="events">
@@ -208,34 +295,125 @@ export function App() {
   );
 }
 
-function matchesScope(
+function matchesAlertScope(
   alert: Alert,
   hostFilter: string,
   severityFilter: SeverityFilter,
-  search: string,
+  query: string,
   timeRange: TimeRange,
   latestObservedAt: Date | null
 ): boolean {
   if (hostFilter !== "all" && alert.hostId !== hostFilter) return false;
   if (severityFilter !== "all" && alert.severity !== severityFilter) return false;
   if (!matchesTimeRange(alert.eventTime, timeRange, latestObservedAt)) return false;
-  if (!search) return true;
-  const haystack = [alert.ruleId, alert.title, alert.host, alert.severity, alert.evidence.join(" "), alert.mitre.join(" ")].join(" ").toLowerCase();
-  return haystack.includes(search.toLowerCase());
+  if (!query) return true;
+  const haystack = [alert.alertId, alert.ruleId, alert.title, alert.host, alert.hostId, alert.severity, alert.evidence.join(" "), alert.mitre.join(" ")].join(" ");
+  return includesQuery(haystack, query);
 }
 
-function matchesEventScope(event: EventRow, hostFilter: string, search: string, timeRange: TimeRange, latestObservedAt: Date | null): boolean {
+function matchesEventScope(event: EventRow, hostFilter: string, query: string, timeRange: TimeRange, latestObservedAt: Date | null): boolean {
   if (hostFilter !== "all" && event.hostId !== hostFilter) return false;
   if (!matchesTimeRange(event.eventTime, timeRange, latestObservedAt)) return false;
-  if (!search) return true;
-  const haystack = [event.host, event.eventType, event.processName, event.destination].join(" ").toLowerCase();
-  return haystack.includes(search.toLowerCase());
+  if (!query) return true;
+  const haystack = [event.eventId, event.host, event.hostId, event.eventType, event.processName, event.destination].join(" ");
+  return includesQuery(haystack, query);
+}
+
+function matchesIncidentScope(incident: Incident, hostFilter: string, severityFilter: SeverityFilter, query: string): boolean {
+  if (hostFilter !== "all" && incident.hostId !== hostFilter) return false;
+  if (severityFilter !== "all" && incident.severity !== severityFilter) return false;
+  if (!query) return true;
+  const haystack = [
+    incident.incidentId,
+    incident.host,
+    incident.hostId,
+    incident.category,
+    incident.evidence.join(" "),
+    incident.stages.map((stage) => `${stage.stage} ${stage.summary}`).join(" ")
+  ].join(" ");
+  return includesQuery(haystack, query);
+}
+
+function matchesTimelineScope(
+  item: TimelineItem,
+  hostOptions: ReadonlyMap<string, string>,
+  hostFilter: string,
+  severityFilter: SeverityFilter,
+  query: string,
+  timeRange: TimeRange,
+  latestObservedAt: Date | null
+): boolean {
+  if (hostFilter !== "all" && hostOptions.get(hostFilter) !== item.host) return false;
+  if (severityFilter !== "all" && item.severity !== severityFilter) return false;
+  if (!matchesTimeRange(item.time, timeRange, latestObservedAt)) return false;
+  if (!query) return true;
+  return includesQuery([item.host, item.stage, item.summary, item.severity].join(" "), query);
+}
+
+function matchesEndpointRiskScope(
+  row: EndpointRisk,
+  hostFilter: string,
+  severityFilter: SeverityFilter,
+  query: string,
+  activeHostIds: ReadonlySet<string>
+): boolean {
+  if (hostFilter !== "all" && row.hostId !== hostFilter) return false;
+  if (severityFilter !== "all" && row.severity !== severityFilter && !activeHostIds.has(row.hostId)) return false;
+  if (!query) return true;
+  const haystack = [row.host, row.hostId, row.severity, row.topRules.join(" ")].join(" ");
+  return includesQuery(haystack, query) || activeHostIds.has(row.hostId);
+}
+
+function matchesProcessScope(row: ProcessTreeRow, hostFilter: string, query: string, timeRange: TimeRange, latestObservedAt: Date | null): boolean {
+  if (hostFilter !== "all" && row.hostId !== hostFilter) return false;
+  if (!matchesTimeRange(row.eventTime, timeRange, latestObservedAt)) return false;
+  if (!query) return true;
+  const haystack = [row.eventId, row.host, row.hostId, row.parentProcess, row.processName, row.processPath].join(" ");
+  return includesQuery(haystack, query);
+}
+
+function matchesDlqScope(row: DlqEvent, query: string): boolean {
+  if (!query) return true;
+  return includesQuery([row.eventId, row.code, row.errors.join(" ")].join(" "), query);
+}
+
+function scopeTopology(
+  topology: DashboardResult["topology"],
+  hostFilter: string,
+  query: string,
+  activeHostIds: ReadonlySet<string>
+): DashboardResult["topology"] {
+  const matchingEdges = topology.edges.filter((edge) => {
+    if (hostFilter !== "all" && edge.source !== hostFilter) return false;
+    if (query && !includesQuery([edge.sourceLabel, edge.source, edge.target, edge.protocol, edge.state].join(" "), query) && !activeHostIds.has(edge.source)) {
+      return false;
+    }
+    return true;
+  });
+  const edges = matchingEdges.length ? matchingEdges : topology.edges.filter((edge) => hostFilter === "all" || edge.source === hostFilter);
+  const visibleEndpointIds = new Set(edges.map((edge) => edge.source));
+  const visibleTargets = new Set(edges.map((edge) => edge.target));
+  const nodes = topology.nodes.filter((node) => {
+    const layer = node.layer.toLowerCase();
+    if (layer.includes("endpoint")) {
+      if (hostFilter !== "all") return node.id === hostFilter;
+      return !query || visibleEndpointIds.has(node.id) || includesQuery(node.label, query);
+    }
+    if (layer.includes("external")) return !query || visibleTargets.has(node.id) || visibleTargets.has(node.label) || includesQuery(node.label, query);
+    return true;
+  });
+  return {
+    ...topology,
+    edges,
+    nodes: nodes.length ? nodes : topology.nodes
+  };
 }
 
 function matchesTimeRange(value: string, timeRange: TimeRange, latestObservedAt: Date | null): boolean {
+  if (timeRange === "all") return true;
   const date = new Date(value);
   if (Number.isNaN(date.getTime()) || !latestObservedAt) return true;
-  const ranges: Readonly<Record<TimeRange, number>> = {
+  const ranges: Readonly<Record<Exclude<TimeRange, "all">, number>> = {
     last10m: 10 * 60 * 1000,
     last1h: 60 * 60 * 1000,
     last24h: 24 * 60 * 60 * 1000
@@ -254,7 +432,7 @@ function countSeverity(alerts: readonly Alert[]): Readonly<Record<Severity | "al
 }
 
 function latestObservedTime(result: DashboardResult): Date | null {
-  const dates = [...result.events.map((event) => event.eventTime), ...result.alerts.map((alert) => alert.eventTime)]
+  const dates = [...result.events.map((event) => event.eventTime), ...result.alerts.map((alert) => alert.eventTime), ...result.timeline.map((item) => item.time)]
     .map((value) => new Date(value))
     .filter((value) => !Number.isNaN(value.getTime()));
   if (!dates.length) return null;
@@ -266,7 +444,40 @@ function buildHostOptions(result: DashboardResult): ReadonlyMap<string, string> 
   for (const endpoint of result.endpointRisk) hosts.set(endpoint.hostId, endpoint.host);
   for (const event of result.events) hosts.set(event.hostId, event.host);
   for (const alert of result.alerts) hosts.set(alert.hostId, alert.host);
+  for (const row of result.processTrees) hosts.set(row.hostId, row.host);
   return hosts;
+}
+
+function buildSignals(result: DashboardResult) {
+  const processEvents = result.events.filter((event) => event.eventType === "process_start").length;
+  const networkEvents = result.events.filter((event) => event.eventType === "network_connection").length;
+  const l7Events = result.summary.l7Events || result.events.filter((event) => ["http_request", "application_action", "decryption_event"].includes(event.eventType)).length;
+  return [
+    {
+      label: "EDR Coverage",
+      value: processEvents ? `Active · process ${processEvents}` : "Limited",
+      detail: "Win32 process telemetry and endpoint agent data",
+      tone: processEvents ? "info" : "warning"
+    },
+    {
+      label: "EDR Correlation",
+      value: l7Events ? `L7 ${l7Events} events` : result.summary.incidents ? `Incidents ${result.summary.incidents}` : `Network ${networkEvents}`,
+      detail: "Process, network, DNS, and L7 records are correlated",
+      tone: result.summary.incidents ? "critical" : "info"
+    },
+    {
+      label: "SIEM Pipeline",
+      value: result.pipeline.compressedBytes ? `gzip ${formatBytes(result.pipeline.compressedBytes)}` : result.summary.dlq ? `DLQ ${result.summary.dlq}` : "Normal",
+      detail: `Payload ${result.telemetry.payloadVersion} · schema ${result.telemetry.schemaVersion}`,
+      tone: result.summary.dlq ? "warning" : "info"
+    },
+    {
+      label: "MITRE ATT&CK",
+      value: result.aiSummary.highOrCriticalCount ? `AI high ${result.aiSummary.highOrCriticalCount}` : `${result.mitreDistribution.length} tactics`,
+      detail: "Rule mapping plus deterministic PoC risk prediction",
+      tone: result.aiSummary.highOrCriticalCount ? "critical" : "neutral"
+    }
+  ] as const;
 }
 
 function stateLabel(state: string): string {
@@ -282,6 +493,10 @@ function stateLabel(state: string): string {
   }
 }
 
+function includesQuery(value: string, query: string): boolean {
+  return value.toLowerCase().includes(query);
+}
+
 function formatTime(value: string): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
@@ -290,4 +505,11 @@ function formatTime(value: string): string {
   const hour = String(date.getHours()).padStart(2, "0");
   const minute = String(date.getMinutes()).padStart(2, "0");
   return `${month}-${day} ${hour}:${minute}`;
+}
+
+function formatBytes(value: number): string {
+  if (!value) return "-";
+  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)} MB`;
+  if (value >= 1_000) return `${(value / 1_000).toFixed(1)} KB`;
+  return `${value} B`;
 }

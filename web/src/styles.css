@@ -122,6 +122,8 @@ button {
   align-self: end;
   display: grid;
   gap: 8px;
+  max-height: 54dvh;
+  overflow: auto;
   border: 1px solid var(--line);
   border-radius: var(--radius);
   background: #14181f;
@@ -222,7 +224,7 @@ code {
   top: 84px;
   z-index: 4;
   display: grid;
-  grid-template-columns: 260px 210px minmax(260px, 1fr);
+  grid-template-columns: 320px 210px 180px minmax(260px, 1fr);
   gap: 10px;
   border-bottom: 1px solid var(--line);
   background: rgba(21, 25, 31, 0.96);
@@ -232,7 +234,7 @@ code {
 
 .segmented {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 4px;
 }
 
@@ -302,6 +304,13 @@ code {
   padding-top: 14px;
 }
 
+.signal-strip {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  padding: 0 14px;
+}
+
 .hero-grid {
   grid-template-columns: minmax(0, 1.8fr) minmax(340px, 0.85fr);
 }
@@ -356,6 +365,41 @@ code {
 
 .kpi-card.warning strong {
   color: var(--amber);
+}
+
+.signal-card {
+  display: grid;
+  gap: 5px;
+  min-height: 86px;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--line);
+  border-radius: var(--radius);
+  background: #141a22;
+  padding: 12px;
+}
+
+.signal-card span,
+.signal-card small {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.signal-card strong {
+  font-size: 18px;
+  line-height: 1.2;
+}
+
+.signal-card.critical {
+  border-left-color: var(--red);
+}
+
+.signal-card.warning {
+  border-left-color: var(--amber);
+}
+
+.signal-card.suspicious,
+.signal-card.info {
+  border-left-color: var(--cyan);
 }
 
 .panel {
@@ -547,10 +591,13 @@ code {
 
 .severity-chart,
 .bar-list,
+.endpoint-risk-list,
 .incident-queue,
 .timeline,
 .alert-list,
-.response-list {
+.response-list,
+.dlq-list,
+.process-tree-list {
   display: grid;
   gap: 8px;
   padding: 10px 12px 12px;
@@ -706,7 +753,10 @@ code {
 .incident-card,
 .timeline-card,
 .inspector,
-.response-item {
+.response-item,
+.endpoint-risk-row,
+.dlq-row,
+.process-row {
   display: grid;
   gap: 8px;
   border: 1px solid var(--line-soft);
@@ -795,6 +845,70 @@ code {
 
 .response-item p {
   grid-column: 1 / -1;
+}
+
+.row-top,
+.process-main {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.endpoint-risk-row small,
+.process-row small,
+.dlq-row p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.score-track {
+  height: 9px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--panel-3);
+}
+
+.score-fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--blue);
+}
+
+.score-fill.critical {
+  background: var(--red);
+}
+
+.score-fill.warning {
+  background: var(--amber);
+}
+
+.score-fill.suspicious {
+  background: var(--blue);
+}
+
+.score-fill.info {
+  background: var(--green);
+}
+
+.risk-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.process-row code {
+  margin: 0;
+}
+
+.mono {
+  font-family: "Cascadia Code", Consolas, monospace;
 }
 
 .inspector-grid {
@@ -935,7 +1049,10 @@ td {
 }
 
 .modal-card {
-  width: min(720px, 100%);
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  width: min(860px, 100%);
+  max-height: min(92dvh, 960px);
   border: 1px solid var(--line);
   border-radius: var(--radius);
   background: var(--panel);
@@ -976,6 +1093,94 @@ td {
   padding: 12px;
 }
 
+.report-center-panel {
+  display: grid;
+  gap: 10px;
+  padding: 10px 12px 12px;
+}
+
+.report-center-panel .report-summary {
+  margin: 0;
+}
+
+.report-center-panel .report-actions {
+  justify-content: flex-start;
+}
+
+.modal-body {
+  display: grid;
+  gap: 12px;
+  overflow: auto;
+  padding: 12px;
+}
+
+.print-section {
+  display: grid;
+  gap: 8px;
+  border: 1px solid var(--line-soft);
+  border-radius: 4px;
+  background: #141a22;
+  padding: 12px;
+}
+
+.print-section h3,
+.print-section p {
+  margin: 0;
+}
+
+.print-section h3 {
+  font-size: 14px;
+}
+
+.print-section p {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.report-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.report-stat-grid div {
+  display: grid;
+  gap: 4px;
+  border: 1px solid var(--line-soft);
+  border-radius: 4px;
+  background: var(--panel-3);
+  padding: 10px;
+}
+
+.report-stat-grid span {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.report-stat-grid strong {
+  font-size: 20px;
+}
+
+.finding-list {
+  display: grid;
+  gap: 8px;
+}
+
+.modal-finding {
+  display: grid;
+  gap: 5px;
+  border-left: 3px solid var(--blue);
+  background: var(--panel-3);
+  padding: 9px;
+}
+
+.modal-finding span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
 @media (max-width: 1180px) {
   .app-shell {
     grid-template-columns: 1fr;
@@ -1001,6 +1206,10 @@ td {
   .kpi-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
+
+  .signal-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 720px) {
@@ -1025,6 +1234,10 @@ td {
     grid-template-columns: 1fr;
   }
 
+  .signal-strip {
+    grid-template-columns: 1fr;
+  }
+
   .sidebar {
     padding: 14px 10px;
   }
@@ -1039,7 +1252,8 @@ td {
 
   .edge-row,
   .inspector-grid,
-  .severity-buttons {
+  .severity-buttons,
+  .report-stat-grid {
     grid-template-columns: 1fr;
   }
 }
@@ -1050,21 +1264,50 @@ td {
     color: #111827;
   }
 
-  .app-shell,
+  body * {
+    visibility: hidden;
+  }
+
+  .modal,
+  .modal * {
+    visibility: visible;
+  }
+
+  .modal,
+  .modal-card {
+    position: absolute;
+    inset: 0;
+    display: block;
+    width: 100%;
+    max-height: none;
+    border: 0;
+    background: #ffffff;
+    box-shadow: none;
+    padding: 0;
+  }
+
   .modal-heading,
   .modal-actions {
     display: none;
   }
 
-  .modal,
-  .modal-card {
-    position: static;
+  .modal-body {
     display: block;
-    width: 100%;
-    border: 0;
-    background: #ffffff;
-    box-shadow: none;
+    overflow: visible;
     padding: 0;
+  }
+
+  .print-section {
+    break-inside: avoid;
+    border-color: #d1d5db;
+    background: #ffffff;
+    color: #111827;
+    margin-bottom: 14px;
+  }
+
+  .print-section p,
+  .modal-finding span {
+    color: #374151;
   }
 
   .report-summary {

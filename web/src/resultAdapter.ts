@@ -21,6 +21,8 @@ export type EndpointRisk = {
   readonly riskScore: number;
   readonly alerts: number;
   readonly incidents: number;
+  readonly topRules: readonly string[];
+  readonly lastEventTime: string;
 };
 
 export type TopologyNode = {
@@ -52,6 +54,24 @@ export type EventRow = {
   readonly processName: string;
   readonly destination: string;
   readonly bytesOut: number;
+};
+
+export type DlqEvent = {
+  readonly eventId: string;
+  readonly index: number;
+  readonly code: string;
+  readonly errors: readonly string[];
+};
+
+export type ProcessTreeRow = {
+  readonly eventId: string;
+  readonly eventTime: string;
+  readonly host: string;
+  readonly hostId: string;
+  readonly parentProcess: string;
+  readonly processName: string;
+  readonly processPath: string;
+  readonly signed: boolean;
 };
 
 export type IncidentStage = {
@@ -92,24 +112,76 @@ export type ResponseAction = {
   readonly description: string;
 };
 
+export type PipelineDelivery = {
+  readonly compression: string;
+  readonly rawBytes: number;
+  readonly compressedBytes: number;
+  readonly compressionRatio: number;
+  readonly shipStatus: string;
+};
+
+export type TelemetryMetadata = {
+  readonly customerId: string;
+  readonly tenantId: string;
+  readonly agentVersion: string;
+  readonly payloadVersion: string;
+  readonly schemaVersion: string;
+};
+
+export type AiSummary = {
+  readonly model: string;
+  readonly predictionCount: number;
+  readonly highOrCriticalCount: number;
+  readonly note: string;
+};
+
+export type QueryFinding = {
+  readonly queryId: string;
+  readonly title: string;
+  readonly ruleId: string;
+  readonly severity: Severity;
+  readonly host: string;
+  readonly hostId: string;
+  readonly summary: string;
+  readonly evidenceCount: number;
+  readonly alertCount: number;
+  readonly lastEventTime: string;
+};
+
+export type TopologySummary = {
+  readonly endpointCount: number;
+  readonly externalDestinationCount: number;
+  readonly alertEdgeCount: number;
+};
+
 export type DashboardResult = {
   readonly status: string;
   readonly decision: string;
   readonly generatedAt: string;
   readonly edrState: EdrState;
   readonly summary: {
+    readonly inputEvents: number;
     readonly events: number;
     readonly alerts: number;
     readonly incidents: number;
     readonly highestRisk: number;
     readonly dlq: number;
+    readonly privacyMasks: number;
+    readonly flowEvents: number;
+    readonly l7Events: number;
+    readonly decryptionEvents: number;
     readonly responseActions: number;
+    readonly aiPredictions: number;
+    readonly predictedHighOrCritical: number;
   };
   readonly alerts: readonly Alert[];
   readonly endpointRisk: readonly EndpointRisk[];
   readonly events: readonly EventRow[];
+  readonly dlqEvents: readonly DlqEvent[];
+  readonly processTrees: readonly ProcessTreeRow[];
   readonly incidents: readonly Incident[];
   readonly timeline: readonly TimelineItem[];
+  readonly queryFindings: readonly QueryFinding[];
   readonly mitreDistribution: readonly CountRow[];
   readonly topDomains: readonly CountRow[];
   readonly topIps: readonly CountRow[];
@@ -117,7 +189,11 @@ export type DashboardResult = {
   readonly topology: {
     readonly nodes: readonly TopologyNode[];
     readonly edges: readonly TopologyEdge[];
+    readonly summary: TopologySummary;
   };
+  readonly pipeline: PipelineDelivery;
+  readonly telemetry: TelemetryMetadata;
+  readonly aiSummary: AiSummary;
   readonly report: {
     readonly htmlPath: string;
     readonly markdownPath: string;
@@ -159,6 +235,14 @@ export function adaptResult(raw: unknown): DashboardResult {
   const input = recordOrEmpty(result.input);
   const edrState = recordOrEmpty(result.edr_state);
   const responsePlan = recordOrEmpty(result.response_plan);
+  const pipeline = recordOrEmpty(result.pipeline_delivery);
+  const ai = recordOrEmpty(result.ai_predictions);
+  const telemetry = {
+    ...recordOrEmpty(input),
+    ...recordOrEmpty(result.telemetry_metadata),
+    ...recordOrEmpty(siem.telemetry_metadata)
+  };
+  const topologySummary = recordOrEmpty(topology.summary);
 
   return {
     status: text(result.status, "empty"),
@@ -166,18 +250,28 @@ export function adaptResult(raw: unknown): DashboardResult {
     generatedAt: text(result.generated_at, "not generated"),
     edrState: normalizeEdrState(text(edrState.state, "unknown")),
     summary: {
+      inputEvents: numberValue(summary.input_event_count),
       events: numberValue(summary.valid_event_count),
       alerts: numberValue(summary.alert_count),
       incidents: numberValue(summary.incident_count),
       highestRisk: numberValue(summary.highest_risk_score),
       dlq: numberValue(summary.dlq_event_count),
-      responseActions: numberValue(summary.response_action_count)
+      privacyMasks: numberValue(summary.privacy_mask_action_count),
+      flowEvents: numberValue(summary.flow_event_count),
+      l7Events: numberValue(summary.l7_event_count),
+      decryptionEvents: numberValue(summary.decryption_event_count),
+      responseActions: numberValue(summary.response_action_count),
+      aiPredictions: numberValue(summary.ai_prediction_count),
+      predictedHighOrCritical: numberValue(summary.predicted_high_or_critical_count)
     },
     alerts: arrayOfRecords(result.alerts).map(toAlert),
     endpointRisk: arrayOfRecords(result.endpoint_risk).map(toEndpointRisk),
     events: arrayOfRecords(result.events).map(toEventRow),
+    dlqEvents: arrayOfRecords(result.dlq_events).map(toDlqEvent),
+    processTrees: arrayOfRecords(result.process_trees).map(toProcessTreeRow),
     incidents: arrayOfRecords(result.incidents).map(toIncident),
     timeline: arrayOfRecords(siem.correlation_timeline).map(toTimelineItem),
+    queryFindings: arrayOfRecords(siem.query_findings).map(toQueryFinding),
     mitreDistribution: arrayOfRecords(result.mitre_distribution).map((item) => ({
       label: text(item.tactic, "unknown tactic"),
       count: numberValue(item.count)
@@ -193,7 +287,32 @@ export function adaptResult(raw: unknown): DashboardResult {
     responseActions: arrayOfRecords(responsePlan.actions).map(toResponseAction),
     topology: {
       nodes: arrayOfRecords(topology.nodes).map(toTopologyNode),
-      edges: arrayOfRecords(topology.edges).map(toTopologyEdge)
+      edges: arrayOfRecords(topology.edges).map(toTopologyEdge),
+      summary: {
+        endpointCount: numberValue(topologySummary.endpoint_count),
+        externalDestinationCount: numberValue(topologySummary.external_destination_count),
+        alertEdgeCount: numberValue(topologySummary.alert_edge_count)
+      }
+    },
+    pipeline: {
+      compression: text(pipeline.compression, "none"),
+      rawBytes: numberValue(pipeline.raw_bytes),
+      compressedBytes: numberValue(pipeline.compressed_bytes),
+      compressionRatio: numberValue(pipeline.compression_ratio),
+      shipStatus: text(pipeline.ship_status, "not_requested")
+    },
+    telemetry: {
+      customerId: text(telemetry.customer_id, "-"),
+      tenantId: text(telemetry.tenant_id, "-"),
+      agentVersion: text(telemetry.agent_version, "-"),
+      payloadVersion: text(telemetry.payload_version, "-"),
+      schemaVersion: text(telemetry.schema_version, "-")
+    },
+    aiSummary: {
+      model: text(ai.model, "not_available"),
+      predictionCount: numberValue(ai.prediction_count),
+      highOrCriticalCount: numberValue(ai.high_or_critical_count),
+      note: text(ai.note, "")
     },
     report: {
       htmlPath: text(report.latest_html_path, "outputs/reports/latest/security_report.html"),
@@ -227,7 +346,9 @@ function toEndpointRisk(item: Readonly<Record<string, unknown>>): EndpointRisk {
     severity: normalizeSeverity(text(item.severity, "info")),
     riskScore: numberValue(item.risk_score),
     alerts: numberValue(item.alert_count),
-    incidents: numberValue(item.incident_count)
+    incidents: numberValue(item.incident_count),
+    topRules: arrayOfText(item.top_rules),
+    lastEventTime: text(item.last_event_time, "")
   };
 }
 
@@ -273,6 +394,29 @@ function toEventRow(item: Readonly<Record<string, unknown>>): EventRow {
   };
 }
 
+function toDlqEvent(item: Readonly<Record<string, unknown>>): DlqEvent {
+  return {
+    eventId: text(item.event_id, `index-${numberValue(item.index)}`),
+    index: numberValue(item.index),
+    code: text(item.code, "UNKNOWN_SCHEMA_ERROR"),
+    errors: arrayOfText(item.errors)
+  };
+}
+
+function toProcessTreeRow(item: Readonly<Record<string, unknown>>): ProcessTreeRow {
+  const hostId = text(item.host_id, "unknown");
+  return {
+    eventId: text(item.event_id, "unknown"),
+    eventTime: text(item.event_time, ""),
+    host: hostLabel(hostId, text(item.host_display_name, "")),
+    hostId,
+    parentProcess: text(item.parent_process, "-"),
+    processName: text(item.process_name, "-"),
+    processPath: text(item.process_path, ""),
+    signed: Boolean(item.signed)
+  };
+}
+
 function toIncident(item: Readonly<Record<string, unknown>>): Incident {
   const hostId = text(item.host_id, "unknown");
   return {
@@ -298,6 +442,22 @@ function toTimelineItem(item: Readonly<Record<string, unknown>>): TimelineItem {
     stage: text(item.stage, "unknown"),
     summary: text(item.summary, ""),
     severity: normalizeSeverity(text(item.severity, "info"))
+  };
+}
+
+function toQueryFinding(item: Readonly<Record<string, unknown>>): QueryFinding {
+  const hostId = text(item.host_id, "unknown");
+  return {
+    queryId: text(item.query_id, "SIEM-Q"),
+    title: text(item.title, "SIEM query finding"),
+    ruleId: text(item.rule_id, "-"),
+    severity: normalizeSeverity(text(item.severity, "info")),
+    host: hostLabel(hostId, text(item.host_display_name, "")),
+    hostId,
+    summary: text(item.summary, ""),
+    evidenceCount: numberValue(item.evidence_count),
+    alertCount: numberValue(item.alert_count),
+    lastEventTime: text(item.last_event_time, "")
   };
 }
 
@@ -393,6 +553,7 @@ function hostLabel(hostId: string, displayName: string): string {
 function isReadableLabel(value: string): boolean {
   if (!value) return false;
   if (value.includes("\uFFFD")) return false;
-  const noisyCharacters = [...value].filter((character) => character === "?" || character.charCodeAt(0) > 0x07ff);
+  if (/[\u3130-\u318f\uac00-\ud7af]/.test(value)) return true;
+  const noisyCharacters = [...value].filter((character) => character === "?");
   return noisyCharacters.length <= Math.max(1, Math.floor(value.length / 3));
 }

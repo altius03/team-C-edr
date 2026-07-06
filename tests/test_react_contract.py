@@ -40,11 +40,19 @@ class ReactDashboardContractTests(unittest.TestCase):
             "last10m",
             "last1h",
             "last24h",
+            "all",
             "ReportModal",
+            "Report Center",
+            "Endpoint Risk",
+            "DLQ Monitor",
+            "Process Tree",
+            "SignalStrip",
             "severityFilter",
         ):
             self.assertIn(required, app)
         self.assertIn("window.SIEM_RESULT", adapter)
+        self.assertIn("process_trees", adapter)
+        self.assertIn("dlq_events", adapter)
         self.assertIn("value.toLowerCase()", adapter)
         self.assertNotIn("result JSON", app)
 
