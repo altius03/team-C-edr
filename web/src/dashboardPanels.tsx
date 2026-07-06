@@ -1,22 +1,58 @@
-import { FileText, Printer } from "lucide-react";
+import { FileText, Printer, X } from "lucide-react";
 import { useState, type ReactNode } from "react";
-import { type Alert, type TopologyEdge, type TopologyNode } from "./resultAdapter";
+import {
+  type Alert,
+  type CountRow,
+  type EventRow,
+  type Incident,
+  type ResponseAction,
+  type Severity,
+  type TimelineItem,
+  type TopologyEdge,
+  type TopologyNode
+} from "./resultAdapter";
 
-export function Kpi({ icon, label, value }: { readonly icon: ReactNode; readonly label: string; readonly value: number }) {
+const SEVERITY_ORDER: readonly Severity[] = ["critical", "warning", "suspicious", "info"];
+
+export function Kpi({
+  accent = "neutral",
+  icon,
+  label,
+  value,
+  detail
+}: {
+  readonly accent?: Severity | "neutral";
+  readonly icon: ReactNode;
+  readonly label: string;
+  readonly value: number | string;
+  readonly detail: string;
+}) {
   return (
-    <article className="kpi-card">
-      {icon}
+    <article className={`kpi-card ${accent}`}>
+      <div className="kpi-icon">{icon}</div>
       <span>{label}</span>
       <strong>{value}</strong>
+      <small>{detail}</small>
     </article>
   );
 }
 
-export function PanelHeading({ title, subtitle }: { readonly title: string; readonly subtitle: string }) {
+export function PanelHeading({
+  title,
+  subtitle,
+  chip
+}: {
+  readonly title: string;
+  readonly subtitle: string;
+  readonly chip?: string | undefined;
+}) {
   return (
     <header className="panel-heading">
-      <h3>{title}</h3>
-      <p>{subtitle}</p>
+      <div>
+        <h3>{title}</h3>
+        <p>{subtitle}</p>
+      </div>
+      {chip ? <span className="panel-chip">{chip}</span> : null}
     </header>
   );
 }
@@ -28,26 +64,178 @@ export function TopologyCanvas({
   readonly nodes: readonly TopologyNode[];
   readonly edges: readonly TopologyEdge[];
 }) {
-  const endpointNodes = nodes.filter((node) => node.layer.toLowerCase().includes("endpoint"));
-  const externalNodes = nodes.filter((node) => node.layer.toLowerCase().includes("external"));
+  const endpointNodes = nodes.filter((node) => node.layer.toLowerCase().includes("endpoint")).slice(0, 4);
+  const externalNodes = nodes.filter((node) => node.layer.toLowerCase().includes("external")).slice(0, 5);
+  const endpointPositions = positionNodes(endpointNodes, 128, 76, 236);
+  const externalPositions = positionNodes(externalNodes, 812, 76, 236);
+  const sourceLookup = new Map(endpointPositions.map((node) => [node.id, node]));
+  const targetLookup = new Map(externalPositions.flatMap((node) => [[node.id, node], [node.label, node]]));
+  const flows = edges.length ? edges.slice(0, 10) : [];
 
   return (
     <div className="topology-stage">
-      <div className="lane">
-        <span>Endpoint fleet</span>
-        {endpointNodes.slice(0, 4).map((node) => <NodePill key={node.id} node={node} />)}
+      <svg className="topology-svg" viewBox="0 0 960 320" role="img" aria-label="Endpoint egress topology">
+        <defs>
+          <marker id="flow-arrow" markerHeight="7" markerWidth="8" orient="auto" refX="7" refY="3.5">
+            <path className="flow-arrow" d="M 0 0 L 8 3.5 L 0 7 z" />
+          </marker>
+        </defs>
+        <text className="lane-label" x="128" y="28" textAnchor="middle">Endpoint fleet</text>
+        <text className="lane-label" x="480" y="28" textAnchor="middle">Protected tenant boundary</text>
+        <text className="lane-label" x="812" y="28" textAnchor="middle">External destinations</text>
+        <rect className="boundary-box" height="214" rx="10" width="170" x="395" y="62" />
+        <text className="boundary-title" x="480" y="142" textAnchor="middle">Tenant SIEM</text>
+        <text className="boundary-state" x="480" y="166" textAnchor="middle">inspection boundary</text>
+        {flows.map((edge, index) => {
+          const source = sourceLookup.get(edge.source) ?? endpointPositions[index % Math.max(endpointPositions.length, 1)];
+          const target = targetLookup.get(edge.target) ?? externalPositions[index % Math.max(externalPositions.length, 1)];
+          if (!source || !target) return null;
+          const path = `M ${source.x + 27} ${source.y} C 292 ${source.y}, 342 166, 393 166 S 656 ${target.y}, ${target.x - 38} ${target.y}`;
+          return <path className={`flow-line ${edgeState(edge)}`} d={path} key={`${edge.source}-${edge.target}-${index}`} />;
+        })}
+        {endpointPositions.map((node) => <GraphNode key={node.id} node={node} side="left" />)}
+        {externalPositions.map((node) => <GraphNode key={node.id} node={node} side="right" />)}
+      </svg>
+      <div className="topology-legend">
+        <span><i className="dot alert" />alert</span>
+        <span><i className="dot observed" />observed</span>
+        <span><i className="dot not-detected" />not detected</span>
       </div>
-      <div className="lane boundary">
-        <span>Protected tenant boundary</span>
-        <div className="boundary-core">Tenant SIEM boundary</div>
+      <div className="edge-list">
+        {flows.slice(0, 5).map((edge, index) => (
+          <div className={`edge-row ${edgeState(edge)}`} key={`${edge.source}-${edge.target}-${index}`}>
+            <span>{edge.sourceLabel}</span>
+            <strong>{edge.target}</strong>
+            <small>{edge.protocol} / alerts {edge.alertCount} / {formatBytes(edge.bytesOut)}</small>
+          </div>
+        ))}
       </div>
-      <div className="lane">
-        <span>External destinations</span>
-        {externalNodes.slice(0, 5).map((node) => <NodePill key={node.id} node={node} />)}
+    </div>
+  );
+}
+
+export function SeverityChart({
+  counts,
+  active,
+  onSelect
+}: {
+  readonly counts: Readonly<Record<Severity | "all", number>>;
+  readonly active: Severity | "all";
+  readonly onSelect: (severity: Severity | "all") => void;
+}) {
+  const total = Math.max(counts.all, 1);
+  return (
+    <div className="severity-chart">
+      <div className="severity-track">
+        {SEVERITY_ORDER.map((severity) => (
+          <span
+            className={`severity-segment ${severity}`}
+            key={severity}
+            style={{ width: `${Math.max(3, Math.round((counts[severity] / total) * 100))}%` }}
+          />
+        ))}
       </div>
-      <div className="edge-summary">
-        {edges.length} egress edges / {edges.filter((edge) => edge.alertCount > 0).length} alert-linked
+      <div className="severity-buttons">
+        <button className={active === "all" ? "active" : ""} onClick={() => onSelect("all")} type="button">
+          <span>All</span>
+          <strong>{counts.all}</strong>
+        </button>
+        {SEVERITY_ORDER.map((severity) => (
+          <button
+            className={active === severity ? `active ${severity}` : severity}
+            key={severity}
+            onClick={() => onSelect(severity)}
+            type="button"
+          >
+            <span>{severity}</span>
+            <strong>{counts[severity]}</strong>
+          </button>
+        ))}
       </div>
+    </div>
+  );
+}
+
+export function VolumeChart({
+  events,
+  alerts
+}: {
+  readonly events: readonly EventRow[];
+  readonly alerts: readonly Alert[];
+}) {
+  const buckets = buildBuckets(events, alerts).slice(-10);
+  const maxValue = Math.max(...buckets.map((bucket) => bucket.events + bucket.alerts), 1);
+  return (
+    <div className="volume-chart" aria-label="event and alert volume chart">
+      {buckets.map((bucket) => {
+        const eventHeight = Math.max(4, Math.round((bucket.events / maxValue) * 150));
+        const alertHeight = bucket.alerts ? Math.max(4, Math.round((bucket.alerts / maxValue) * 150)) : 0;
+        return (
+          <div className="volume-column" key={bucket.label}>
+            <div className="volume-stack">
+              <span className="alert-bar" style={{ height: alertHeight }} />
+              <span className="event-bar" style={{ height: eventHeight }} />
+            </div>
+            <small>{bucket.shortLabel}</small>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+export function CountBars({ rows, kind }: { readonly rows: readonly CountRow[]; readonly kind: string }) {
+  const maxCount = Math.max(...rows.map((row) => row.count), 1);
+  return (
+    <div className="bar-list">
+      {rows.slice(0, 6).map((row) => (
+        <div className="bar-row" key={`${kind}-${row.label}`}>
+          <div className="bar-label">
+            <span>{row.label}</span>
+            <strong>{row.count}</strong>
+          </div>
+          <div className="bar-track">
+            <span className="bar-fill" style={{ width: `${Math.round((row.count / maxCount) * 100)}%` }} />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+export function IncidentQueue({ incidents }: { readonly incidents: readonly Incident[] }) {
+  if (!incidents.length) return <EmptyState label="No incident in the selected scope" />;
+  return (
+    <div className="incident-queue">
+      {incidents.slice(0, 4).map((incident) => (
+        <article className={`incident-card ${incident.severity}`} key={incident.incidentId}>
+          <div className="incident-top">
+            <strong>{incident.host}</strong>
+            <span className={`pill ${incident.severity}`}>{incident.severity}</span>
+          </div>
+          <div className="incident-score">risk {incident.riskScore}</div>
+          <p>{incident.category.replace(/_/g, " ")}</p>
+          <ol>
+            {incident.stages.slice(0, 4).map((stage) => <li key={`${incident.incidentId}-${stage.stage}`}>{stage.summary}</li>)}
+          </ol>
+        </article>
+      ))}
+    </div>
+  );
+}
+
+export function Timeline({ rows }: { readonly rows: readonly TimelineItem[] }) {
+  if (!rows.length) return <EmptyState label="No correlated attack timeline in this scope" />;
+  return (
+    <div className="timeline">
+      {rows.slice(0, 6).map((row, index) => (
+        <article className={`timeline-card ${row.severity}`} key={`${row.stage}-${index}`}>
+          <span className="step">STEP {index + 1}</span>
+          <strong>{row.stage.replace(/_/g, " ")}</strong>
+          <p>{row.summary}</p>
+          <small>{row.host} / {formatTime(row.time)}</small>
+        </article>
+      ))}
     </div>
   );
 }
@@ -55,13 +243,102 @@ export function TopologyCanvas({
 export function AlertInspector({ alert }: { readonly alert: Alert }) {
   return (
     <div className={`inspector ${alert.severity}`}>
-      <span className="chip">{alert.severity}</span>
+      <div className="inspector-top">
+        <span className={`pill ${alert.severity}`}>{alert.severity}</span>
+        <strong>risk {alert.riskScore}</strong>
+      </div>
       <h3>{alert.ruleId} / {alert.title}</h3>
-      <p>{alert.host}</p>
-      <strong>risk {alert.riskScore}</strong>
+      <dl className="inspector-grid">
+        <div>
+          <dt>Host</dt>
+          <dd>{alert.host}</dd>
+        </div>
+        <div>
+          <dt>MITRE</dt>
+          <dd>{alert.mitre.join(" / ") || "-"}</dd>
+        </div>
+      </dl>
       <ul>
-        {alert.evidence.slice(0, 4).map((line) => <li key={line}>{line}</li>)}
+        {alert.evidence.slice(0, 5).map((line) => <li key={line}>{line}</li>)}
       </ul>
+    </div>
+  );
+}
+
+export function AlertList({
+  alerts,
+  selectedAlertId,
+  onSelect
+}: {
+  readonly alerts: readonly Alert[];
+  readonly selectedAlertId: string;
+  readonly onSelect: (alertId: string) => void;
+}) {
+  if (!alerts.length) return <EmptyState label="No alerts match the selected filters" />;
+  return (
+    <div className="alert-list">
+      {alerts.slice(0, 18).map((alert) => (
+        <button
+          className={selectedAlertId === alert.alertId ? `alert-row ${alert.severity} selected` : `alert-row ${alert.severity}`}
+          key={alert.alertId}
+          onClick={() => onSelect(alert.alertId)}
+          type="button"
+        >
+          <span>{alert.ruleId} / {alert.title}</span>
+          <strong>{alert.host}</strong>
+          <small>{alert.severity} / risk {alert.riskScore} / {formatTime(alert.eventTime)}</small>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+export function EventTable({ events }: { readonly events: readonly EventRow[] }) {
+  if (!events.length) return <EmptyState label="No events match the selected filters" />;
+  return (
+    <div className="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Time</th>
+            <th>Endpoint</th>
+            <th>Type</th>
+            <th>Process</th>
+            <th>Destination</th>
+            <th>Bytes out</th>
+          </tr>
+        </thead>
+        <tbody>
+          {events.slice(-60).reverse().map((event) => (
+            <tr key={event.eventId}>
+              <td>{formatTime(event.eventTime)}</td>
+              <td>{event.host}</td>
+              <td>{event.eventType}</td>
+              <td>{event.processName}</td>
+              <td>{event.destination}</td>
+              <td>{formatBytes(event.bytesOut)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+export function ResponsePlan({ actions }: { readonly actions: readonly ResponseAction[] }) {
+  if (!actions.length) return <EmptyState label="No response action generated" />;
+  return (
+    <div className="response-list">
+      {actions.slice(0, 6).map((action, index) => (
+        <article className="response-item" key={`${action.ruleId}-${index}`}>
+          <div>
+            <strong>{action.actionType.replace(/_/g, " ")}</strong>
+            <small>{action.host} / {action.ruleId} / {action.status}</small>
+          </div>
+          <span className="pill info">{action.mode}</span>
+          <p>{action.description}</p>
+        </article>
+      ))}
     </div>
   );
 }
@@ -75,18 +352,26 @@ export function ReportModal({ htmlPath, markdownPath }: { readonly htmlPath: str
   return (
     <>
       <div className="report-actions">
-        <button onClick={() => setOpen(true)} type="button"><FileText size={16} /> 보고서 열기</button>
-        <button onClick={() => window.print()} type="button"><Printer size={16} /> PDF로 저장</button>
+        <button onClick={() => setOpen(true)} type="button"><FileText size={16} /> Open report</button>
+        <button onClick={() => window.print()} type="button"><Printer size={16} /> Save PDF</button>
       </div>
       {open ? (
         <div aria-modal="true" className="modal" role="dialog">
           <section className="modal-card">
-            <PanelHeading title="LayerTrace Report" subtitle="Generated analysis report" />
-            <p>HTML: {htmlPath}</p>
-            <p>Markdown: {markdownPath}</p>
+            <div className="modal-heading">
+              <PanelHeading title="LayerTrace report" subtitle="Use print to save this report as PDF" />
+              <button aria-label="Close report" className="icon-button" onClick={() => setOpen(false)} type="button">
+                <X size={16} />
+              </button>
+            </div>
+            <div className="report-summary">
+              <strong>Current generated report</strong>
+              <p>HTML: {htmlPath}</p>
+              <p>Markdown: {markdownPath}</p>
+            </div>
             <div className="modal-actions">
-              <button onClick={() => window.print()} type="button"><Printer size={16} /> PDF로 저장</button>
-              <button onClick={() => setOpen(false)} type="button">닫기</button>
+              <button onClick={() => window.print()} type="button"><Printer size={16} /> Save PDF</button>
+              <button onClick={() => setOpen(false)} type="button">Close</button>
             </div>
           </section>
         </div>
@@ -95,6 +380,86 @@ export function ReportModal({ htmlPath, markdownPath }: { readonly htmlPath: str
   );
 }
 
-function NodePill({ node }: { readonly node: TopologyNode }) {
-  return <div className={`node-pill ${node.state}`}>{node.label}</div>;
+function GraphNode({ node, side }: { readonly node: PositionedNode; readonly side: "left" | "right" }) {
+  const textX = side === "left" ? -34 : 34;
+  const anchor = side === "left" ? "end" : "start";
+  return (
+    <g className={`graph-node ${node.state}`} transform={`translate(${node.x} ${node.y})`}>
+      <circle className="node-ring" r="25" />
+      <circle className="node-core" r="11" />
+      <text className="node-label" textAnchor={anchor} x={textX} y="2">{truncate(node.label, side === "left" ? 14 : 19)}</text>
+      <text className="node-state" textAnchor={anchor} x={textX} y="18">{stateLabel(node.state)}</text>
+    </g>
+  );
+}
+
+type PositionedNode = TopologyNode & { readonly x: number; readonly y: number };
+
+function positionNodes(nodes: readonly TopologyNode[], x: number, minY: number, maxY: number): readonly PositionedNode[] {
+  const visibleNodes = nodes.length ? nodes : [{ id: "empty", label: "No data", layer: "empty", state: "not-detected", riskScore: 0, alertCount: 0 }];
+  const step = visibleNodes.length === 1 ? 0 : (maxY - minY) / (visibleNodes.length - 1);
+  return visibleNodes.map((node, index) => ({
+    ...node,
+    x,
+    y: visibleNodes.length === 1 ? (minY + maxY) / 2 : minY + step * index
+  }));
+}
+
+function edgeState(edge: TopologyEdge): string {
+  if (edge.alertCount > 0 || edge.state === "alert") return "alert";
+  if (edge.state === "observed") return "observed";
+  return "not-detected";
+}
+
+function buildBuckets(events: readonly EventRow[], alerts: readonly Alert[]) {
+  const buckets = new Map<string, { label: string; shortLabel: string; events: number; alerts: number }>();
+  for (const event of events) {
+    const key = hourBucket(event.eventTime);
+    if (!buckets.has(key)) buckets.set(key, { label: key, shortLabel: key.slice(11), events: 0, alerts: 0 });
+    const bucket = buckets.get(key);
+    if (bucket) bucket.events += 1;
+  }
+  for (const alert of alerts) {
+    const key = hourBucket(alert.eventTime);
+    if (!buckets.has(key)) buckets.set(key, { label: key, shortLabel: key.slice(11), events: 0, alerts: 0 });
+    const bucket = buckets.get(key);
+    if (bucket) bucket.alerts += 1;
+  }
+  return [...buckets.values()].sort((a, b) => a.label.localeCompare(b.label));
+}
+
+function hourBucket(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "unknown";
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  const hour = String(date.getHours()).padStart(2, "0");
+  return `${month}-${day} ${hour}:00`;
+}
+
+function formatTime(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "-";
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  const hour = String(date.getHours()).padStart(2, "0");
+  const minute = String(date.getMinutes()).padStart(2, "0");
+  return `${month}-${day} ${hour}:${minute}`;
+}
+
+function formatBytes(value: number): string {
+  if (!value) return "-";
+  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)} MB`;
+  if (value >= 1_000) return `${(value / 1_000).toFixed(1)} KB`;
+  return `${value} B`;
+}
+
+function stateLabel(state: string): string {
+  if (state === "alert") return "alert";
+  if (state === "observed") return "observed";
+  return "not detected";
+}
+
+function truncate(value: string, maxLength: number): string {
+  return value.length > maxLength ? `${value.slice(0, maxLength - 3)}...` : value;
 }

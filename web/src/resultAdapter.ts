@@ -2,16 +2,21 @@ export type Severity = "critical" | "warning" | "suspicious" | "info";
 export type EdrState = "red" | "yellow" | "green" | "unknown";
 
 export type Alert = {
+  readonly alertId: string;
   readonly ruleId: string;
   readonly title: string;
   readonly host: string;
+  readonly hostId: string;
+  readonly eventTime: string;
   readonly severity: Severity;
   readonly riskScore: number;
+  readonly mitre: readonly string[];
   readonly evidence: readonly string[];
 };
 
 export type EndpointRisk = {
   readonly host: string;
+  readonly hostId: string;
   readonly severity: Severity;
   readonly riskScore: number;
   readonly alerts: number;
@@ -23,13 +28,68 @@ export type TopologyNode = {
   readonly label: string;
   readonly layer: string;
   readonly state: string;
+  readonly riskScore: number;
+  readonly alertCount: number;
 };
 
 export type TopologyEdge = {
   readonly source: string;
+  readonly sourceLabel: string;
   readonly target: string;
   readonly protocol: string;
+  readonly state: string;
+  readonly eventCount: number;
   readonly alertCount: number;
+  readonly bytesOut: number;
+};
+
+export type EventRow = {
+  readonly eventId: string;
+  readonly eventTime: string;
+  readonly host: string;
+  readonly hostId: string;
+  readonly eventType: string;
+  readonly processName: string;
+  readonly destination: string;
+  readonly bytesOut: number;
+};
+
+export type IncidentStage = {
+  readonly stage: string;
+  readonly summary: string;
+};
+
+export type Incident = {
+  readonly incidentId: string;
+  readonly host: string;
+  readonly hostId: string;
+  readonly severity: Severity;
+  readonly riskScore: number;
+  readonly category: string;
+  readonly stages: readonly IncidentStage[];
+  readonly evidence: readonly string[];
+};
+
+export type TimelineItem = {
+  readonly time: string;
+  readonly host: string;
+  readonly stage: string;
+  readonly summary: string;
+  readonly severity: Severity;
+};
+
+export type CountRow = {
+  readonly label: string;
+  readonly count: number;
+};
+
+export type ResponseAction = {
+  readonly actionType: string;
+  readonly host: string;
+  readonly ruleId: string;
+  readonly mode: string;
+  readonly status: string;
+  readonly description: string;
 };
 
 export type DashboardResult = {
@@ -42,9 +102,18 @@ export type DashboardResult = {
     readonly alerts: number;
     readonly incidents: number;
     readonly highestRisk: number;
+    readonly dlq: number;
+    readonly responseActions: number;
   };
   readonly alerts: readonly Alert[];
   readonly endpointRisk: readonly EndpointRisk[];
+  readonly events: readonly EventRow[];
+  readonly incidents: readonly Incident[];
+  readonly timeline: readonly TimelineItem[];
+  readonly mitreDistribution: readonly CountRow[];
+  readonly topDomains: readonly CountRow[];
+  readonly topIps: readonly CountRow[];
+  readonly responseActions: readonly ResponseAction[];
   readonly topology: {
     readonly nodes: readonly TopologyNode[];
     readonly edges: readonly TopologyEdge[];
@@ -89,6 +158,7 @@ export function adaptResult(raw: unknown): DashboardResult {
   const report = recordOrEmpty(result.report);
   const input = recordOrEmpty(result.input);
   const edrState = recordOrEmpty(result.edr_state);
+  const responsePlan = recordOrEmpty(result.response_plan);
 
   return {
     status: text(result.status, "empty"),
@@ -99,10 +169,28 @@ export function adaptResult(raw: unknown): DashboardResult {
       events: numberValue(summary.valid_event_count),
       alerts: numberValue(summary.alert_count),
       incidents: numberValue(summary.incident_count),
-      highestRisk: numberValue(summary.highest_risk_score)
+      highestRisk: numberValue(summary.highest_risk_score),
+      dlq: numberValue(summary.dlq_event_count),
+      responseActions: numberValue(summary.response_action_count)
     },
     alerts: arrayOfRecords(result.alerts).map(toAlert),
     endpointRisk: arrayOfRecords(result.endpoint_risk).map(toEndpointRisk),
+    events: arrayOfRecords(result.events).map(toEventRow),
+    incidents: arrayOfRecords(result.incidents).map(toIncident),
+    timeline: arrayOfRecords(siem.correlation_timeline).map(toTimelineItem),
+    mitreDistribution: arrayOfRecords(result.mitre_distribution).map((item) => ({
+      label: text(item.tactic, "unknown tactic"),
+      count: numberValue(item.count)
+    })),
+    topDomains: arrayOfRecords(result.top_suspicious_domains).map((item) => ({
+      label: text(item.domain, "unknown domain"),
+      count: numberValue(item.count)
+    })),
+    topIps: arrayOfRecords(result.top_suspicious_ips).map((item) => ({
+      label: text(item.ip, "unknown ip"),
+      count: numberValue(item.count)
+    })),
+    responseActions: arrayOfRecords(responsePlan.actions).map(toResponseAction),
     topology: {
       nodes: arrayOfRecords(topology.nodes).map(toTopologyNode),
       edges: arrayOfRecords(topology.edges).map(toTopologyEdge)
@@ -111,24 +199,31 @@ export function adaptResult(raw: unknown): DashboardResult {
       htmlPath: text(report.latest_html_path, "outputs/reports/latest/security_report.html"),
       markdownPath: text(report.latest_markdown_path, "outputs/reports/latest/security_report.md")
     },
-    source: text(input.source, "latest CLI run")
+    source: sourceLabel(input)
   };
 }
 
 function toAlert(item: Readonly<Record<string, unknown>>): Alert {
+  const hostId = text(item.host_id, "unknown");
   return {
+    alertId: text(item.alert_id, text(item.rule_id, "unknown")),
     ruleId: text(item.rule_id, "unknown"),
     title: text(item.title, text(item.rule_id, "Unknown alert")),
-    host: text(item.host_display_name, text(item.host_id, "unknown endpoint")),
+    host: hostLabel(hostId, text(item.host_display_name, "")),
+    hostId,
+    eventTime: text(item.event_time, ""),
     severity: normalizeSeverity(text(item.severity, "info")),
     riskScore: numberValue(item.risk_score),
+    mitre: arrayOfText(item.mitre_mapping),
     evidence: arrayOfText(item.evidence)
   };
 }
 
 function toEndpointRisk(item: Readonly<Record<string, unknown>>): EndpointRisk {
+  const hostId = text(item.host_id, "unknown");
   return {
-    host: text(item.host_display_name, text(item.host_id, "unknown endpoint")),
+    host: hostLabel(hostId, text(item.host_display_name, "")),
+    hostId,
     severity: normalizeSeverity(text(item.severity, "info")),
     riskScore: numberValue(item.risk_score),
     alerts: numberValue(item.alert_count),
@@ -137,20 +232,84 @@ function toEndpointRisk(item: Readonly<Record<string, unknown>>): EndpointRisk {
 }
 
 function toTopologyNode(item: Readonly<Record<string, unknown>>): TopologyNode {
+  const id = text(item.id, "unknown");
+  const rawLabel = text(item.label, id);
+  const layer = text(item.layer, "unknown");
   return {
-    id: text(item.id, "unknown"),
-    label: text(item.label, "unknown"),
-    layer: text(item.layer, "unknown"),
-    state: text(item.state, "observed")
+    id,
+    label: layer.toLowerCase().includes("endpoint") ? hostLabel(id, rawLabel) : rawLabel,
+    layer,
+    state: normalizeTopologyState(text(item.state, "observed")),
+    riskScore: numberValue(item.risk_score),
+    alertCount: numberValue(item.alert_count)
   };
 }
 
 function toTopologyEdge(item: Readonly<Record<string, unknown>>): TopologyEdge {
+  const source = text(item.source, "unknown");
   return {
-    source: text(item.source, "unknown"),
+    source,
+    sourceLabel: hostLabel(source, text(item.source_label, source)),
     target: text(item.target, "unknown"),
     protocol: text(item.protocol, "tcp"),
-    alertCount: numberValue(item.alert_count)
+    state: normalizeTopologyState(text(item.state, "observed")),
+    eventCount: numberValue(item.event_count),
+    alertCount: numberValue(item.alert_count),
+    bytesOut: numberValue(item.bytes_out)
+  };
+}
+
+function toEventRow(item: Readonly<Record<string, unknown>>): EventRow {
+  const hostId = text(item.host_id, "unknown");
+  return {
+    eventId: text(item.event_id, "unknown"),
+    eventTime: text(item.event_time, ""),
+    host: hostLabel(hostId, text(item.host_display_name, "")),
+    hostId,
+    eventType: text(item.event_type, "unknown"),
+    processName: text(item.process_name, "-"),
+    destination: text(item.domain, text(item.dst_ip, "-")),
+    bytesOut: numberValue(item.bytes_out)
+  };
+}
+
+function toIncident(item: Readonly<Record<string, unknown>>): Incident {
+  const hostId = text(item.host_id, "unknown");
+  return {
+    incidentId: text(item.incident_id, "unknown"),
+    host: hostLabel(hostId, text(item.host_display_name, "")),
+    hostId,
+    severity: normalizeSeverity(text(item.severity, "critical")),
+    riskScore: numberValue(item.risk_score),
+    category: text(item.primary_category, "incident"),
+    stages: arrayOfRecords(item.detected_sequence).map((stage) => ({
+      stage: text(stage.stage, "unknown"),
+      summary: text(stage.summary, "")
+    })),
+    evidence: arrayOfText(item.evidence)
+  };
+}
+
+function toTimelineItem(item: Readonly<Record<string, unknown>>): TimelineItem {
+  const hostId = text(item.host_id, "unknown");
+  return {
+    time: text(item.time, ""),
+    host: hostLabel(hostId, text(item.host_display_name, "")),
+    stage: text(item.stage, "unknown"),
+    summary: text(item.summary, ""),
+    severity: normalizeSeverity(text(item.severity, "info"))
+  };
+}
+
+function toResponseAction(item: Readonly<Record<string, unknown>>): ResponseAction {
+  const hostId = text(item.host_id, "unknown");
+  return {
+    actionType: text(item.action_type, "analyst_review"),
+    host: hostLabel(hostId, ""),
+    ruleId: text(item.rule_id, "-"),
+    mode: text(item.mode, "dry-run"),
+    status: text(item.status, "planned"),
+    description: text(item.description, "")
   };
 }
 
@@ -179,6 +338,21 @@ function normalizeEdrState(value: string): EdrState {
   }
 }
 
+function normalizeTopologyState(value: string): string {
+  const normalized = value.toLowerCase().replace(/_/g, "-");
+  if (normalized === "red") return "alert";
+  return normalized;
+}
+
+function sourceLabel(input: Readonly<Record<string, unknown>>): string {
+  const source = text(input.source, "latest CLI run");
+  if (source === "event_file") return `${numberValue(input.raw_event_count)} events / offline sample`;
+  if (source === "local_windows") return "local Windows telemetry";
+  if (source === "pcap_file") return "PCAP file telemetry";
+  if (source === "l7_file") return "decrypted L7 records";
+  return source;
+}
+
 function recordOrEmpty(value: unknown): Readonly<Record<string, unknown>> {
   return isRecord(value) ? value : {};
 }
@@ -201,4 +375,24 @@ function text(value: unknown, fallback: string): string {
 
 function numberValue(value: unknown): number {
   return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+function hostLabel(hostId: string, displayName: string): string {
+  const fallback: Readonly<Record<string, string>> = {
+    "endpoint-01": "황건하 PC",
+    "endpoint-02": "박소연 Laptop",
+    "endpoint-03": "이혜령 Workstation",
+    "endpoint-04": "이주호 Server"
+  };
+  if (isReadableLabel(displayName)) {
+    return displayName;
+  }
+  return fallback[hostId.toLowerCase()] ?? hostId;
+}
+
+function isReadableLabel(value: string): boolean {
+  if (!value) return false;
+  if (value.includes("\uFFFD")) return false;
+  const noisyCharacters = [...value].filter((character) => character === "?" || character.charCodeAt(0) > 0x07ff);
+  return noisyCharacters.length <= Math.max(1, Math.floor(value.length / 3));
 }
