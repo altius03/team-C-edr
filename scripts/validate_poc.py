@@ -1,20 +1,33 @@
 from __future__ import annotations
 
 import compileall
+import http.client
 import json
 import subprocess
 import sys
+import tempfile
+import threading
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 
 BASE_DIR = Path(__file__).resolve().parents[1]
+if str(BASE_DIR) not in sys.path:
+    sys.path.insert(0, str(BASE_DIR))
 LATEST_RESULT_PATH = BASE_DIR / "outputs" / "latest" / "result.json"
 VERIFICATION_DIR = BASE_DIR / "outputs" / "verification"
 DASHBOARD_INDEX_PATH = BASE_DIR / "dashboard" / "index.html"
 DASHBOARD_APP_PATH = BASE_DIR / "dashboard" / "app.js"
 DASHBOARD_DATA_PATH = BASE_DIR / "dashboard" / "data" / "latest-result.js"
+PACKAGE_JSON_PATH = BASE_DIR / "package.json"
+PACKAGE_LOCK_PATH = BASE_DIR / "package-lock.json"
+REACT_INDEX_PATH = BASE_DIR / "web" / "index.html"
+REACT_APP_PATH = BASE_DIR / "web" / "src" / "App.tsx"
+REACT_ADAPTER_PATH = BASE_DIR / "web" / "src" / "resultAdapter.ts"
+REACT_STYLES_PATH = BASE_DIR / "web" / "src" / "styles.css"
+REACT_BUILD_SCRIPT_PATH = BASE_DIR / "scripts" / "build_react.mjs"
+WEB_DASHBOARD_JSON_PATH = BASE_DIR / "web" / "public" / "latest-result.json"
 LATEST_REPORT_MD_PATH = BASE_DIR / "outputs" / "reports" / "latest" / "security_report.md"
 LATEST_REPORT_HTML_PATH = BASE_DIR / "outputs" / "reports" / "latest" / "security_report.html"
 LATEST_PIPELINE_BUNDLE_PATH = BASE_DIR / "outputs" / "pipeline" / "latest" / "telemetry_bundle.json.gz"
@@ -29,6 +42,9 @@ def main() -> int:
     result = _read_latest_result()
     checks.append(_check_result_contract(result))
     checks.append(_check_dashboard_artifacts())
+    checks.append(_check_react_project_contract())
+    checks.append(_check_react_build())
+    checks.append(_check_service_architecture())
     checks.append(_check_report_artifacts(result))
     checks.append(_check_pipeline_artifacts(result))
     checks.append(_check_openapi_contract())
@@ -54,12 +70,14 @@ def _check_unit_tests() -> dict[str, Any]:
         cwd=BASE_DIR,
         text=True,
         capture_output=True,
+        encoding="utf-8",
+        errors="replace",
         timeout=30,
     )
     return {
         "name": "unit_tests",
         "status": "pass" if completed.returncode == 0 else "fail",
-        "details": (completed.stdout + completed.stderr).strip(),
+        "details": _combined_output(completed),
     }
 
 
@@ -69,6 +87,8 @@ def _check_cli_default_run() -> dict[str, Any]:
         cwd=BASE_DIR,
         text=True,
         capture_output=True,
+        encoding="utf-8",
+        errors="replace",
         timeout=30,
     )
     return {
@@ -188,12 +208,201 @@ def _check_dashboard_artifacts() -> dict[str, Any]:
         failures.append(f"missing dashboard data script: {DASHBOARD_DATA_PATH}")
     elif "window.SIEM_RESULT" not in DASHBOARD_DATA_PATH.read_text(encoding="utf-8"):
         failures.append("dashboard data script does not define window.SIEM_RESULT")
+    if not WEB_DASHBOARD_JSON_PATH.exists():
+        failures.append(f"missing React dashboard JSON: {WEB_DASHBOARD_JSON_PATH}")
 
     return {
         "name": "dashboard_artifacts",
         "status": "pass" if not failures else "fail",
         "details": "dashboard index and latest-result.js are present." if not failures else failures,
     }
+
+
+def _check_react_project_contract() -> dict[str, Any]:
+    failures: list[str] = []
+    for path in (
+        PACKAGE_JSON_PATH,
+        PACKAGE_LOCK_PATH,
+        REACT_INDEX_PATH,
+        REACT_APP_PATH,
+        REACT_ADAPTER_PATH,
+        REACT_STYLES_PATH,
+        REACT_BUILD_SCRIPT_PATH,
+    ):
+        if not path.exists():
+            failures.append(f"missing React project file: {path}")
+    if PACKAGE_JSON_PATH.exists():
+        package = json.loads(PACKAGE_JSON_PATH.read_text(encoding="utf-8"))
+        scripts = package.get("scripts", {})
+        dependencies = package.get("dependencies", {})
+        dev_dependencies = package.get("devDependencies", {})
+        for script in ("dev", "build", "preview", "typecheck"):
+            if script not in scripts:
+                failures.append(f"package script missing: {script}")
+        if "scripts/build_react.mjs" not in scripts.get("build", ""):
+            failures.append("build script must use the verified React build wrapper")
+        for dependency in ("react", "react-dom"):
+            if dependency not in dependencies:
+                failures.append(f"React dependency missing: {dependency}")
+        for dependency in ("typescript", "vite"):
+            if dependency not in dev_dependencies:
+                failures.append(f"React dev dependency missing: {dependency}")
+    if REACT_APP_PATH.exists():
+        app = REACT_APP_PATH.read_text(encoding="utf-8")
+        for required in (
+            "Endpoint fleet",
+            "Protected tenant boundary",
+            "External destinations",
+            "last10m",
+            "last1h",
+            "last24h",
+            "severityFilter",
+            "ReportModal",
+        ):
+            if required not in app:
+                failures.append(f"React dashboard missing surface text/behavior: {required}")
+        if "result JSON" in app:
+            failures.append("React dashboard still exposes result JSON copy")
+    if REACT_ADAPTER_PATH.exists():
+        adapter = REACT_ADAPTER_PATH.read_text(encoding="utf-8")
+        if "latest-result.json" not in adapter or "window.SIEM_RESULT" not in adapter:
+            failures.append("React adapter must support static JSON and legacy SIEM_RESULT fallback")
+
+    return {
+        "name": "react_project_contract",
+        "status": "pass" if not failures else "fail",
+        "details": "React/Vite project contract is present." if not failures else failures,
+    }
+
+
+def _check_react_build() -> dict[str, Any]:
+    completed = subprocess.run(
+        [_npm_command(), "run", "build"],
+        cwd=BASE_DIR,
+        text=True,
+        capture_output=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=60,
+    )
+    return {
+        "name": "react_build",
+        "status": "pass" if completed.returncode == 0 else "fail",
+        "details": _combined_output(completed),
+    }
+
+
+def _check_service_architecture() -> dict[str, Any]:
+    failures: list[str] = []
+    try:
+        from src.sample_loader import load_events
+        from src.service_api import create_service_server
+        from src.service_store import ServiceStore, TaskStatus
+        from src.service_worker import run_default_analysis_job
+    except Exception as exc:
+        return {"name": "service_architecture", "status": "fail", "details": f"service import failed: {exc}"}
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        store = ServiceStore(Path(temp_dir) / "layertrace.sqlite3")
+        store.initialize()
+        task = store.enqueue_task("analysis", {"source": "validate_poc"})
+        claimed = store.claim_next_task()
+        if claimed is None or claimed.task_id != task.task_id:
+            failures.append("local queue did not claim the pending analysis task")
+        events, input_meta = load_events(BASE_DIR / "samples" / "default_events.json")
+        run_id = run_default_analysis_job(store, events=events, input_meta=input_meta)
+        store.complete_task(task.task_id, TaskStatus.SUCCEEDED, {"run_id": run_id})
+        latest = store.get_latest_run()
+        if not latest or latest.get("status") != "success":
+            failures.append("SQLite store did not persist the latest successful run")
+        if store.get_task(task.task_id).status != TaskStatus.SUCCEEDED:
+            failures.append("local queue did not persist the succeeded task state")
+        if not store.list_incidents(severity="critical"):
+            failures.append("SQLite incident query did not return critical incidents")
+        failures.extend(_check_service_http_surface(create_service_server, store, events))
+
+    return {
+        "name": "service_architecture",
+        "status": "pass" if not failures else "fail",
+        "details": "SQLite store, local queue, and REST surface are functional." if not failures else failures,
+    }
+
+
+def _check_service_http_surface(create_service_server: Any, store: Any, events: list[dict[str, Any]]) -> list[str]:
+    failures: list[str] = []
+    server = create_service_server(("127.0.0.1", 0), store)
+    port = server.server_address[1]
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        health = _get_json(port, "/v1/health")
+        dashboard = _get_json(port, "/v1/dashboard/latest")
+        incidents = _get_json(port, "/v1/incidents?severity=critical")
+        report = _get_json(port, "/v1/reports/latest")
+        accepted = _post_json(
+            port,
+            "/v1/telemetry/events",
+            {"events": events},
+            {
+                "X-Customer-Id": "techeer-demo",
+                "X-Tenant-Id": "techeer-demo-lab",
+                "X-Agent-Version": "0.4.0",
+                "X-Payload-Version": "1.1",
+            },
+        )
+    finally:
+        server.shutdown()
+        thread.join(timeout=5)
+        server.server_close()
+    if health.get("status") != "ok" or health.get("storage") != "sqlite":
+        failures.append(f"health endpoint returned unexpected payload: {health}")
+    if dashboard.get("status") != "success":
+        failures.append("dashboard latest endpoint did not return the saved successful run")
+    if not incidents.get("incidents"):
+        failures.append("incidents endpoint did not return critical incidents")
+    if report.get("pdf_export") != "browser_print_to_pdf":
+        failures.append("latest report endpoint did not expose print-to-PDF metadata")
+    if accepted.get("status") != "accepted" or accepted.get("accepted_count") != len(events):
+        failures.append(f"telemetry ingestion endpoint returned unexpected payload: {accepted}")
+    return failures
+
+
+def _get_json(port: int, path: str) -> dict[str, Any]:
+    connection = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+    try:
+        connection.request("GET", path)
+        response = connection.getresponse()
+        body = response.read().decode("utf-8")
+    finally:
+        connection.close()
+    if response.status != 200:
+        raise RuntimeError(f"GET {path} returned {response.status}: {body}")
+    parsed = json.loads(body)
+    if not isinstance(parsed, dict):
+        raise TypeError(f"GET {path} did not return a JSON object")
+    return parsed
+
+
+def _post_json(port: int, path: str, payload: dict[str, Any], headers: dict[str, str]) -> dict[str, Any]:
+    body = json.dumps(payload).encode("utf-8")
+    connection = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+    try:
+        connection.request(
+            "POST",
+            path,
+            body=body,
+            headers={"Content-Type": "application/json", "Content-Length": str(len(body)), **headers},
+        )
+        response = connection.getresponse()
+        response_body = response.read().decode("utf-8")
+    finally:
+        connection.close()
+    if response.status != 202:
+        raise RuntimeError(f"POST {path} returned {response.status}: {response_body}")
+    parsed = json.loads(response_body)
+    if not isinstance(parsed, dict):
+        raise TypeError(f"POST {path} did not return a JSON object")
+    return parsed
 
 
 def _check_report_artifacts(result: dict[str, Any]) -> dict[str, Any]:
@@ -245,7 +454,17 @@ def _check_openapi_contract() -> dict[str, Any]:
         failures.append(f"missing OpenAPI contract: {OPENAPI_PATH}")
     else:
         text = OPENAPI_PATH.read_text(encoding="utf-8")
-        for required in ("openapi: 3.", "/v1/telemetry/events", "X-Customer-Id", "X-Agent-Version", "REST"):
+        for required in (
+            "openapi: 3.",
+            "/v1/telemetry/events",
+            "/v1/dashboard/latest",
+            "/v1/reports/latest",
+            "X-Customer-Id",
+            "X-Agent-Version",
+            "REST",
+            "sqlite",
+            "local-worker",
+        ):
             if required not in text:
                 failures.append(f"OpenAPI contract missing: {required}")
         if "future_transport" in text:
@@ -261,6 +480,14 @@ def _read_latest_result() -> dict[str, Any]:
     if not LATEST_RESULT_PATH.exists():
         return {}
     return json.loads(LATEST_RESULT_PATH.read_text(encoding="utf-8"))
+
+
+def _npm_command() -> str:
+    return "npm.cmd" if sys.platform == "win32" else "npm"
+
+
+def _combined_output(completed: subprocess.CompletedProcess[str]) -> str:
+    return ((completed.stdout or "") + (completed.stderr or "")).strip()
 
 
 def _build_report(checks: list[dict[str, Any]], result: dict[str, Any]) -> dict[str, Any]:
@@ -285,6 +512,10 @@ def _build_report(checks: list[dict[str, Any]], result: dict[str, Any]) -> dict[
             "AI-style host risk prediction",
             "gzip telemetry pipeline bundle",
             "static SIEM dashboard fed by latest CLI result",
+            "React/TypeScript dashboard build with Vite runtime assets",
+            "SQLite service store for latest runs, incidents, and queued task state",
+            "local worker boundary that can later be replaced by a broker-backed worker",
+            "REST health, latest dashboard, and incident query endpoints",
             "Markdown and HTML report artifacts generated from latest result",
             "SIEM query findings and Endpoint Egress Topology",
             "dashboard report modal with print-to-PDF flow",

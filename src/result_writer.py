@@ -13,6 +13,8 @@ from .config import (
     LATEST_REPORT_DIR,
     REPORT_RUNS_DIR,
     RUNS_OUTPUT_DIR,
+    WEB_DASHBOARD_DATA_PATH,
+    WEB_DASHBOARD_JSON_PATH,
 )
 from .report_builder import write_report_artifacts
 
@@ -69,13 +71,22 @@ def _write_json(path: Path, payload: dict[str, Any]) -> None:
 
 
 def _write_dashboard_data(payload: dict[str, Any]) -> dict[str, Path]:
-    DASHBOARD_DATA_PATH.parent.mkdir(parents=True, exist_ok=True)
     # The dashboard is static HTML, so the CLI publishes its latest result as a
-    # JavaScript assignment instead of requiring a local API server.
+    # JavaScript assignment instead of requiring a local API server. The React
+    # app consumes the same contract from web/public until the REST API becomes
+    # the primary live data source.
     script = "window.SIEM_RESULT = "
-    script += json.dumps(_repo_safe_payload(payload), ensure_ascii=False, indent=2)
+    safe_payload = _repo_safe_payload(payload)
+    script += json.dumps(safe_payload, ensure_ascii=False, indent=2)
     script += ";\n"
-    DASHBOARD_DATA_PATH.write_text(script, encoding="utf-8")
+    for path in (DASHBOARD_DATA_PATH, WEB_DASHBOARD_DATA_PATH):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(script, encoding="utf-8")
+    WEB_DASHBOARD_JSON_PATH.parent.mkdir(parents=True, exist_ok=True)
+    WEB_DASHBOARD_JSON_PATH.write_text(
+        json.dumps(safe_payload, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
     return {
         "index_path": DASHBOARD_DIR / "index.html",
         "data_script_path": DASHBOARD_DATA_PATH,

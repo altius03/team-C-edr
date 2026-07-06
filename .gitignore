@@ -6,6 +6,12 @@ __pycache__/
 .ruff_cache/
 .coverage
 .DS_Store
+node_modules/
+dist/
+dist-smoke/
+dist-plugin-smoke/
+dist-api-smoke/
+tsconfig.tsbuildinfo
 
 # Local editor files
 .idea/
@@ -14,4 +20,6 @@ __pycache__/
 # Generated runtime artifacts
 outputs/
 dashboard/data/latest-result.js
+web/public/latest-result.js
+web/public/latest-result.json
 dashboard/server*.log

@@ -2,7 +2,7 @@
 
 이 문서는 현재 구현된 `security_edr_siem_poc` 기준의 ERD와 SA입니다.
 
-현재 PoC는 RDBMS를 사용하지 않고 `outputs/latest/result.json`과 `dashboard/data/latest-result.js`를 산출합니다. 따라서 아래 ERD는 실제 DB 스키마가 아니라, 현재 JSON artifact를 DB로 전환할 때의 논리 데이터 모델입니다.
+현재 PoC는 `outputs/latest/result.json`, `dashboard/data/latest-result.js`, `web/public/latest-result.json` artifact를 산출하고, REST service surface용 SQLite 저장소(`outputs/service/layertrace.sqlite3`)에 최신 run, incident, local task 상태를 저장합니다. 아래 ERD는 JSON artifact의 논리 모델과 현재 SQLite 물리 테이블을 함께 설명합니다.
 
 ---
 
@@ -277,7 +277,21 @@ erDiagram
 
 ---
 
-## 4. SA: System Architecture
+## 4. 현재 SQLite 저장소
+
+현재 SQLite는 전체 telemetry 원장을 정규화해서 모두 저장하지 않고, 서비스 조회와 작업 상태에 필요한 최소 테이블만 저장합니다.
+
+| 테이블 | 주요 컬럼 | 용도 |
+|---|---|---|
+| `runs` | `run_id`, `generated_at`, `status`, `decision`, `payload` | 최신 dashboard/report payload 조회용 run 저장소 |
+| `incidents` | `run_id`, `incident_id`, `severity`, `risk_score`, `host_display_name`, `payload` | severity 필터가 가능한 incident 조회 |
+| `tasks` | `task_id`, `task_type`, `status`, `created_at`, `updated_at`, `payload`, `result`, `error` | RabbitMQ/Celery 도입 전 local worker task 상태 |
+
+`payload` 컬럼은 현재 PoC 단계에서 JSON을 그대로 보존합니다. 운영 DB로 전환할 때는 위 논리 ERD의 `ALERT_EVENT`, `INCIDENT_STAGE`, `INCIDENT_STAGE_EVENT` 같은 join table로 분리합니다.
+
+---
+
+## 5. SA: System Architecture
 
 ```mermaid
 flowchart LR
@@ -304,9 +318,13 @@ flowchart LR
     subgraph Output["Artifacts & Surfaces"]
         PIPELINE["pipeline.py\ngzip telemetry bundle\noptional REST ship"]
         RESULT["outputs/latest/result.json\noutputs/runs/{timestamp}/result.json"]
+        STORE["service_store.py\nSQLite runs/incidents/tasks"]
         DASHDATA["dashboard/data/latest-result.js"]
         DASH["dashboard/index.html\nEDR/SIEM visual console"]
+        REACTDATA["web/public/latest-result.json"]
+        REACT["web/ React dashboard\nVite build/preview"]
         REPORT["outputs/reports/latest\nHTML + Markdown report"]
+        REST["service_api.py\nREST health/dashboard/incidents/reports/ingest"]
         VALIDATE["scripts/validate_poc.py\ncompile/test/contract validation"]
     end
 
@@ -324,18 +342,24 @@ flowchart LR
     AI --> RESPONSE
     RESPONSE --> PIPELINE
     RESPONSE --> RESULT
+    RESULT --> STORE
     RESULT --> DASHDATA
+    RESULT --> REACTDATA
     DASHDATA --> DASH
+    REACTDATA --> REACT
+    STORE --> REST
     RESULT --> REPORT
     RESULT --> VALIDATE
     REPORT --> VALIDATE
     DASH --> VALIDATE
+    REACT --> VALIDATE
+    REST --> VALIDATE
     PIPELINE --> VALIDATE
 ```
 
 ---
 
-## 5. SA: 현재 실행 흐름
+## 6. SA: 현재 실행 흐름
 
 ```mermaid
 sequenceDiagram
@@ -370,7 +394,7 @@ sequenceDiagram
 
 ---
 
-## 6. 모듈별 책임
+## 7. 모듈별 책임
 
 | 모듈 | 책임 | 주요 산출 |
 |---|---|---|
@@ -387,18 +411,26 @@ sequenceDiagram
 | `src/pipeline.py` | gzip telemetry bundle 생성, optional REST ship | pipeline_delivery |
 | `src/report_builder.py` | HTML/Markdown 보고서 생성 | security_report.html, security_report.md |
 | `src/result_writer.py` | latest/run result 저장, dashboard data script 생성 | result.json, latest-result.js |
+| `src/service_store.py` | SQLite run/incident/task 저장 | `outputs/service/layertrace.sqlite3` |
+| `src/service_worker.py` | local worker job 실행 경계 | saved run_id |
+| `src/service_api.py` | REST 조회/ingest endpoint | health, dashboard, incidents, reports, telemetry ingest |
 | `dashboard/*` | 사용자 화면 | topology graph, detection charts, alert explorer, report modal |
+| `web/*` | React/TypeScript 사용자 화면 | Vite build/preview dashboard |
+| `scripts/build_react.mjs` | React production build wrapper | `dist/` |
+| `scripts/run_service.py` | 로컬 REST service 실행 | `http://127.0.0.1:8080` |
 | `scripts/validate_poc.py` | 업로드 전 검증 | latest_verification.json |
 
 ---
 
-## 7. 현재 API/전송 기준
+## 8. 현재 API/전송 기준
 
 현재 구현 기준은 REST ingestion 문서화와 optional gzip POST입니다.
 
 | 항목 | 현재 구현 |
 |---|---|
 | 수집 전송 | REST 문서화, optional `--ship-url` gzip POST |
+| 로컬 REST 조회 | `GET /v1/health`, `/v1/dashboard/latest`, `/v1/incidents`, `/v1/reports/latest` |
+| 로컬 REST 수집 | `POST /v1/telemetry/events` |
 | 인증/식별 | header metadata 기반 고객사/테넌트/에이전트 버전 식별 |
 | 문서 | `docs/openapi.yaml` |
 | 압축 | gzip bundle |
@@ -418,7 +450,7 @@ X-Payload-Version: 1.1
 
 ---
 
-## 8. Dashboard/Report Surface
+## 9. Dashboard/Report Surface
 
 현재 사용자에게 보이는 surface는 raw JSON 링크가 아니라 정적 dashboard와 popup report입니다.
 
@@ -428,14 +460,16 @@ X-Payload-Version: 1.1
 | Dashboard shell | `dashboard/index.html` | topology, chart, incident, alert, report modal |
 | Dashboard logic | `dashboard/app.js` | 시간 필터, severity 필터, alert inspector, topology SVG, chart rendering |
 | Dashboard style | `dashboard/styles.css` | EDR/SIEM 콘솔형 dark UI |
+| React data | `web/public/latest-result.json` | React dashboard가 fetch하는 최신 result |
+| React app | `web/src/*` | Endpoint egress topology, severity switch, report modal |
 | Report | `outputs/reports/latest/security_report.html` | 팝업/print-to-PDF 대상 HTML |
 | Report markdown | `outputs/reports/latest/security_report.md` | 공유용 Markdown 보고서 |
 
 ---
 
-## 9. 설계상 주의점
+## 10. 설계상 주의점
 
-- 현재는 DB가 없으므로 ERD의 `RUN_RESULT`, `ALERT_EVENT`, `INCIDENT_STAGE_EVENT`는 향후 저장소 도입 시 필요한 정규화 모델입니다.
+- 현재 SQLite DB는 `runs`, `incidents`, `tasks`만 물리 저장합니다. ERD의 `RUN_RESULT`, `ALERT_EVENT`, `INCIDENT_STAGE_EVENT`는 운영 저장소 도입 시 필요한 정규화 모델입니다.
 - `Alert.event_ids`는 현재 JSON 배열이지만 DB에서는 `ALERT_EVENT` join table로 분리하는 것이 맞습니다.
 - `Incident.detected_sequence`도 현재 JSON 배열이지만 DB에서는 `INCIDENT_STAGE`, `INCIDENT_STAGE_EVENT`로 분리하는 것이 맞습니다.
 - `DNS cache`는 Win32 process에서 파생되는 값이 아니라 별도 resolver/cache source입니다. correlation은 `host_id`, `process_name`, `domain`, `event_time` 기준입니다.

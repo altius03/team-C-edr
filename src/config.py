@@ -20,6 +20,12 @@ PIPELINE_RUNS_DIR = PIPELINE_DIR / "runs"
 DASHBOARD_DIR = BASE_DIR / "dashboard"
 DASHBOARD_DATA_DIR = DASHBOARD_DIR / "data"
 DASHBOARD_DATA_PATH = DASHBOARD_DATA_DIR / "latest-result.js"
+WEB_DIR = BASE_DIR / "web"
+WEB_PUBLIC_DIR = WEB_DIR / "public"
+WEB_DASHBOARD_DATA_PATH = WEB_PUBLIC_DIR / "latest-result.js"
+WEB_DASHBOARD_JSON_PATH = WEB_PUBLIC_DIR / "latest-result.json"
+SERVICE_DIR = OUTPUTS_DIR / "service"
+SERVICE_DB_PATH = SERVICE_DIR / "layertrace.sqlite3"
 SIGNATURE_DB_PATH = BASE_DIR / "rules" / "threat_signatures.json"
 
 DEFAULT_LIMITATIONS = [

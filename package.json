@@ -1,0 +1,24 @@
+{
+  "name": "layertrace-edr-siem",
+  "private": true,
+  "version": "0.4.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite web --host 127.0.0.1",
+    "build": "tsc -b && node scripts/build_react.mjs",
+    "preview": "vite preview web --outDir ../dist --host 127.0.0.1",
+    "typecheck": "tsc -b"
+  },
+  "dependencies": {
+    "lucide-react": "^0.475.0",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7"
+  },
+  "devDependencies": {
+    "@types/node": "^24.13.2",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "typescript": "^5.9.3",
+    "vite": "^7.3.6"
+  }
+}

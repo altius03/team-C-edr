@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: LayerTrace EDR/SIEM REST API
-  version: 0.3.0
+  version: 0.4.0
   description: >
     REST ingestion and reporting contract for the local LayerTrace EDR/SIEM PoC.
 servers:
@@ -9,6 +9,7 @@ servers:
     description: Local development placeholder
 tags:
   - name: telemetry
+  - name: dashboard
   - name: incidents
   - name: reports
 paths:
@@ -57,6 +58,17 @@ paths:
                 $ref: "#/components/schemas/IngestResponse"
         "400":
           description: Invalid telemetry schema.
+  /v1/dashboard/latest:
+    get:
+      tags: [dashboard]
+      summary: Get latest dashboard payload
+      responses:
+        "200":
+          description: Latest dashboard payload stored in SQLite.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DashboardResult"
   /v1/incidents:
     get:
       tags: [incidents]
@@ -145,7 +157,7 @@ components:
   schemas:
     HealthResponse:
       type: object
-      required: [status, transport]
+      required: [status, transport, storage, queue]
       properties:
         status:
           type: string
@@ -153,6 +165,12 @@ components:
         transport:
           type: string
           example: REST
+        storage:
+          type: string
+          example: sqlite
+        queue:
+          type: string
+          example: local-worker
     TelemetryEvent:
       type: object
       required: [event_id, event_time, received_time, host_id, event_type, source, payload_version]
@@ -200,15 +218,35 @@ components:
           type: integer
     IngestResponse:
       type: object
-      required: [status, accepted_count]
+      required: [status, run_id, accepted_count]
       properties:
         status:
           type: string
           example: accepted
+        run_id:
+          type: string
         accepted_count:
           type: integer
         dlq_count:
           type: integer
+    DashboardResult:
+      type: object
+      properties:
+        status:
+          type: string
+        decision:
+          type: string
+        generated_at:
+          type: string
+          format: date-time
+        edr_state:
+          type: object
+        summary:
+          type: object
+        siem_analysis:
+          type: object
+        report:
+          type: object
     Incident:
       type: object
       properties:
