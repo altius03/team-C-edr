@@ -1,0 +1,226 @@
+openapi: 3.1.0
+info:
+  title: LayerTrace EDR/SIEM REST API
+  version: 0.3.0
+  description: >
+    REST ingestion and reporting contract for the local LayerTrace EDR/SIEM PoC.
+servers:
+  - url: http://localhost:8080
+    description: Local development placeholder
+tags:
+  - name: telemetry
+  - name: incidents
+  - name: reports
+paths:
+  /v1/health:
+    get:
+      tags: [telemetry]
+      summary: Health check
+      responses:
+        "200":
+          description: Service is reachable.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+  /v1/telemetry/events:
+    post:
+      tags: [telemetry]
+      summary: Ingest endpoint telemetry events
+      description: >
+        Accepts privacy-safe endpoint telemetry. Process observations from Win32_Process
+        and DNS cache observations are submitted as separate event types and correlated
+        later in the SIEM analysis layer.
+      parameters:
+        - $ref: "#/components/parameters/CustomerId"
+        - $ref: "#/components/parameters/TenantId"
+        - $ref: "#/components/parameters/AgentVersion"
+        - $ref: "#/components/parameters/PayloadVersion"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [events]
+              properties:
+                events:
+                  type: array
+                  items:
+                    $ref: "#/components/schemas/TelemetryEvent"
+      responses:
+        "202":
+          description: Events accepted for local analysis.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IngestResponse"
+        "400":
+          description: Invalid telemetry schema.
+  /v1/incidents:
+    get:
+      tags: [incidents]
+      summary: List correlated incidents
+      parameters:
+        - $ref: "#/components/parameters/CustomerId"
+        - $ref: "#/components/parameters/TenantId"
+        - name: severity
+          in: query
+          schema:
+            type: string
+            enum: [critical, warning, suspicious, info]
+        - name: range
+          in: query
+          description: Dashboard-compatible range.
+          schema:
+            type: string
+            enum: [last10m, last1h, last24h]
+      responses:
+        "200":
+          description: Incident list.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  incidents:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Incident"
+  /v1/reports/latest:
+    get:
+      tags: [reports]
+      summary: Get latest generated report metadata
+      parameters:
+        - $ref: "#/components/parameters/CustomerId"
+        - $ref: "#/components/parameters/TenantId"
+      responses:
+        "200":
+          description: Latest report metadata.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  generated_at:
+                    type: string
+                    format: date-time
+                  html_path:
+                    type: string
+                  markdown_path:
+                    type: string
+                  pdf_export:
+                    type: string
+                    description: Browser print-to-PDF flow in the static dashboard.
+components:
+  parameters:
+    CustomerId:
+      name: X-Customer-Id
+      in: header
+      required: true
+      schema:
+        type: string
+      description: Customer partition identifier.
+    TenantId:
+      name: X-Tenant-Id
+      in: header
+      required: true
+      schema:
+        type: string
+      description: Tenant partition identifier.
+    AgentVersion:
+      name: X-Agent-Version
+      in: header
+      required: true
+      schema:
+        type: string
+      description: Endpoint collector version.
+    PayloadVersion:
+      name: X-Payload-Version
+      in: header
+      required: true
+      schema:
+        type: string
+      description: Telemetry schema version.
+  schemas:
+    HealthResponse:
+      type: object
+      required: [status, transport]
+      properties:
+        status:
+          type: string
+          example: ok
+        transport:
+          type: string
+          example: REST
+    TelemetryEvent:
+      type: object
+      required: [event_id, event_time, received_time, host_id, event_type, source, payload_version]
+      properties:
+        event_id:
+          type: string
+        event_time:
+          type: string
+          format: date-time
+        received_time:
+          type: string
+          format: date-time
+        host_id:
+          type: string
+        event_type:
+          type: string
+          enum:
+            - process_start
+            - process_stop
+            - file_download
+            - dns_query
+            - network_connection
+            - flow_summary
+            - vpn_tunnel
+            - autorun_entry
+            - usb_event
+            - http_request
+            - decryption_event
+            - application_action
+            - signature_match
+            - response_action
+            - ai_prediction
+            - pipeline_delivery
+        source:
+          type: string
+        payload_version:
+          type: string
+        process_name:
+          type: string
+        domain:
+          type: string
+        dst_ip:
+          type: string
+        bytes_out:
+          type: integer
+    IngestResponse:
+      type: object
+      required: [status, accepted_count]
+      properties:
+        status:
+          type: string
+          example: accepted
+        accepted_count:
+          type: integer
+        dlq_count:
+          type: integer
+    Incident:
+      type: object
+      properties:
+        incident_id:
+          type: string
+        host_id:
+          type: string
+        host_display_name:
+          type: string
+        severity:
+          type: string
+        risk_score:
+          type: integer
+        decision:
+          type: string

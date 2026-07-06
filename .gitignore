@@ -1,0 +1,17 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.DS_Store
+
+# Local editor files
+.idea/
+.vscode/
+
+# Generated runtime artifacts
+outputs/
+dashboard/data/latest-result.js
+dashboard/server*.log

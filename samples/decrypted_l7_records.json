@@ -1,0 +1,41 @@
+{
+  "description": "PoC decrypted L7 proxy records. Body content is intentionally omitted or masked.",
+  "records": [
+    {
+      "record_type": "decryption_event",
+      "event_id": "l7-sample-001",
+      "event_time": "2026-07-05T10:00:11+09:00",
+      "host_id": "endpoint-l7",
+      "process_name": "chrome.exe",
+      "sni": "phish-login.example",
+      "dst_domain": "phish-login.example",
+      "dst_port": 443,
+      "tls_version": "TLS1.3",
+      "decryption_result": "decrypted"
+    },
+    {
+      "record_type": "http_request",
+      "event_id": "l7-sample-002",
+      "event_time": "2026-07-05T10:00:13+09:00",
+      "host_id": "endpoint-l7",
+      "process_name": "chrome.exe",
+      "method": "POST",
+      "url": "https://phish-login.example/login",
+      "url_category": "phishing",
+      "decrypted": true,
+      "http_body": "must not be retained"
+    },
+    {
+      "record_type": "application_action",
+      "event_id": "l7-sample-003",
+      "event_time": "2026-07-05T10:04:00+09:00",
+      "host_id": "endpoint-l7",
+      "app_name": "KakaoTalk",
+      "app_action": "message_send",
+      "object_url": "https://evil-kakao-link.example/collect",
+      "attachment_hash": "badbeef0000000000000000000000000000000000000000000000000000000001",
+      "message_content": "must not be retained",
+      "decrypted": true
+    }
+  ]
+}

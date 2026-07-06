@@ -1,0 +1,38 @@
+{
+  "version": "2026.07.poc",
+  "malicious_domains": [
+    "malware-drop.example",
+    "c2.badbeacon.example",
+    "phish-login.example",
+    "evil-kakao-link.example"
+  ],
+  "malicious_urls": [
+    "https://malware-drop.example/payload/invoice.exe",
+    "https://phish-login.example/login",
+    "https://evil-kakao-link.example/collect"
+  ],
+  "malicious_ips": [
+    "203.0.113.77",
+    "198.51.100.66"
+  ],
+  "malware_hashes": [
+    "badbeef0000000000000000000000000000000000000000000000000000000001"
+  ],
+  "monitored_app_actions": [
+    {
+      "app": "KakaoTalk",
+      "action": "message_send",
+      "risk": "data_leak_or_phishing_link"
+    },
+    {
+      "app": "browser",
+      "action": "credential_post",
+      "risk": "credential_access"
+    }
+  ],
+  "blocked_categories": [
+    "malware",
+    "phishing",
+    "credential-theft"
+  ]
+}

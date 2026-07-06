@@ -1,0 +1,360 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Security EDR SIEM PoC Dashboard</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar" aria-label="Dashboard navigation">
+        <div class="brand">
+          <span class="brand-mark">X</span>
+          <div>
+            <strong>EDR Console</strong>
+            <span>Security EDR/SIEM</span>
+          </div>
+        </div>
+        <nav class="nav-list">
+          <a class="nav-item active" href="#overview">Overview</a>
+          <a class="nav-item" href="#incidents">Incidents</a>
+          <a class="nav-item" href="#timeline">Timeline</a>
+          <a class="nav-item" href="#alerts">Alerts</a>
+          <a class="nav-item" href="#dlq">DLQ</a>
+          <a class="nav-item" href="#reports">Reports</a>
+        </nav>
+        <div class="side-note" id="data-source-switch">
+          <span>데이터 소스</span>
+          <strong id="data-source-current">offline sample</strong>
+          <p id="data-source-note">대시보드는 마지막으로 실행한 CLI 결과를 읽습니다.</p>
+          <div class="source-options" aria-label="data source switch commands">
+            <code>python -m src.run</code>
+            <code>python -m src.run --collect-local</code>
+            <code>python -m src.run --collect-local --include-dns-cache</code>
+            <code>python -m src.run --l7-file samples/decrypted_l7_records.json</code>
+          </div>
+        </div>
+      </aside>
+
+      <div class="page">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">LayerTrace EDR/SIEM PoC</p>
+            <h1>Threat Operations Console</h1>
+            <p class="subtitle">Endpoint telemetry, Incident, Alert evidence, Report를 한 화면에서 조사합니다.</p>
+          </div>
+          <div class="top-actions">
+            <div class="run-meta" aria-label="run metadata">
+              <span id="run-status">상태 확인 중</span>
+              <span id="run-time">생성 시간 확인 중</span>
+              <span id="run-source">입력 확인 중</span>
+            </div>
+            <div class="action-row">
+              <button class="action-button primary" id="open-report-button" type="button">보고서 열기</button>
+            </div>
+          </div>
+        </header>
+
+        <section class="toolbar" aria-label="dashboard filters">
+          <label class="field">
+            <span>시간 범위</span>
+            <select id="time-range">
+              <option value="last10m">Last 10 minutes</option>
+              <option value="last1h">Last 1 hour</option>
+              <option value="last24h" selected>Last 24 hours</option>
+              <option value="all">All sample data</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>Endpoint</span>
+            <select id="host-filter">
+              <option value="all">전체 Endpoint</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>Severity</span>
+            <select id="severity-filter">
+              <option value="all">전체 Severity</option>
+              <option value="critical">critical</option>
+              <option value="warning">warning</option>
+              <option value="suspicious">suspicious</option>
+              <option value="info">info</option>
+            </select>
+          </label>
+          <label class="field search-field">
+            <span>검색</span>
+            <input id="search-input" type="search" placeholder="domain, process, rule 검색" />
+          </label>
+        </section>
+
+        <main class="layout" id="overview">
+          <section class="visual-stage span-12" aria-label="first viewport security visualization">
+          <section class="panel span-8" id="egress-topology">
+            <div class="panel-heading">
+              <div>
+                <h2>Endpoint Egress Topology</h2>
+                <p>Endpoint fleet, protected tenant boundary, external destinations를 그래프로 봅니다.</p>
+              </div>
+              <span class="panel-chip" id="topology-summary">0 edges</span>
+            </div>
+            <div id="egress-map" class="egress-map"></div>
+          </section>
+
+            <section class="panel span-4" id="detection-chart-panel">
+              <div class="panel-heading">
+                <div>
+                  <h2>Detection Charts</h2>
+                  <p>Severity, event volume, MITRE 분포를 즉시 확인합니다.</p>
+                </div>
+                <span class="panel-chip" id="chart-window">Last 24 hours</span>
+              </div>
+              <div id="detection-charts" class="detection-charts"></div>
+            </section>
+          </section>
+
+          <section class="metric-grid" aria-label="summary metrics">
+            <article class="metric critical">
+              <span>Risk 최고점</span>
+              <strong id="metric-risk">0</strong>
+              <small>검토가 필요한 Endpoint 기준</small>
+            </article>
+            <article class="metric critical">
+              <span>조치 대기</span>
+              <strong id="metric-action">0</strong>
+              <small>critical / warning Alert</small>
+            </article>
+            <article class="metric">
+              <span>Valid Events</span>
+              <strong id="metric-events">0</strong>
+              <small>분석에 사용된 event 수</small>
+            </article>
+            <article class="metric">
+              <span>Alerts</span>
+              <strong id="metric-alerts">0</strong>
+              <small>Rule 기반 탐지 결과</small>
+            </article>
+            <article class="metric">
+              <span>Incidents</span>
+              <strong id="metric-incidents">0</strong>
+              <small>공격 흐름으로 묶인 건</small>
+            </article>
+            <article class="metric warning">
+              <span>DLQ</span>
+              <strong id="metric-dlq">0</strong>
+              <small>schema 확인 필요</small>
+            </article>
+          </section>
+
+          <section class="signal-strip span-12" aria-label="security coverage">
+            <article class="signal-card">
+              <span>EDR Coverage</span>
+              <strong id="signal-agent">대기 중</strong>
+              <p>process / file metadata</p>
+            </article>
+            <article class="signal-card">
+              <span>EDR Correlation</span>
+              <strong id="signal-correlation">대기 중</strong>
+              <p>event sequence 연결</p>
+            </article>
+            <article class="signal-card">
+              <span>SIEM Pipeline</span>
+              <strong id="signal-siem">대기 중</strong>
+              <p>schema / DLQ / dashboard</p>
+            </article>
+            <article class="signal-card">
+              <span>MITRE ATT&CK</span>
+              <strong id="signal-mitre">대기 중</strong>
+              <p>tactic mapping</p>
+            </article>
+          </section>
+
+          <section class="panel span-4" id="alert-inspector">
+            <div class="panel-heading">
+              <div>
+                <h2>Alert Inspector</h2>
+                <p>선택한 alert의 host, rule, evidence를 즉시 확인합니다.</p>
+              </div>
+              <span class="panel-chip" id="inspector-status">선택 없음</span>
+            </div>
+            <div id="alert-detail" class="alert-detail"></div>
+          </section>
+
+          <section class="panel span-8" id="incidents">
+            <div class="panel-heading">
+              <div>
+                <h2>Incident Workbench</h2>
+                <p>Falcon/Cortex류 콘솔처럼 우선순위와 근거를 한 줄로 봅니다.</p>
+              </div>
+              <span class="panel-chip" id="incident-count">0 incidents</span>
+            </div>
+            <div id="incident-queue" class="incident-queue"></div>
+          </section>
+
+          <section class="panel span-4" id="reports">
+            <div class="panel-heading">
+              <div>
+                <h2>Report Center</h2>
+                <p>현재 분석 결과를 공유 가능한 보고서로 저장합니다.</p>
+              </div>
+            </div>
+            <div class="report-center">
+              <div id="report-summary" class="report-summary"></div>
+              <div class="report-links">
+                <button id="open-report-center-button" class="action-button primary" type="button">보고서 열기</button>
+                <button id="print-report-button" class="action-button" type="button">PDF로 저장</button>
+              </div>
+            </div>
+          </section>
+
+          <section class="panel span-8">
+            <div class="panel-heading">
+              <div>
+                <h2>Event Volume</h2>
+                <p>시간대별 event와 alert 밀도를 비교합니다.</p>
+              </div>
+              <span class="panel-chip" id="event-window">sample window</span>
+            </div>
+            <div id="event-volume" class="volume-chart"></div>
+          </section>
+
+          <section class="panel span-4">
+            <div class="panel-heading">
+              <div>
+                <h2>Response Playbook</h2>
+                <p>현재 Alert 기준으로 필요한 analyst action입니다.</p>
+              </div>
+            </div>
+            <div id="response-actions" class="response-actions"></div>
+          </section>
+
+          <section class="panel span-5">
+            <div class="panel-heading">
+              <div>
+                <h2>Endpoint Risk</h2>
+                <p>Risk score가 높은 순서로 정렬했습니다.</p>
+              </div>
+            </div>
+            <div id="endpoint-risk" class="endpoint-list"></div>
+          </section>
+
+          <section class="panel span-7" id="timeline">
+            <div class="panel-heading">
+              <div>
+                <h2>Attack Timeline</h2>
+                <p>download, execution, C2, exfiltration 흐름을 stage 단위로 봅니다.</p>
+              </div>
+            </div>
+            <div id="attack-timeline" class="attack-timeline"></div>
+          </section>
+
+          <section class="panel span-4">
+            <div class="panel-heading">
+              <div>
+                <h2>MITRE ATT&CK</h2>
+                <p>tactic별 탐지 분포입니다.</p>
+              </div>
+            </div>
+            <div id="mitre-bars" class="bar-list"></div>
+          </section>
+
+          <section class="panel span-4">
+            <div class="panel-heading">
+              <div>
+                <h2>Top Domains</h2>
+                <p>Alert와 연결된 destination입니다.</p>
+              </div>
+            </div>
+            <div id="domains" class="compact-list"></div>
+          </section>
+
+          <section class="panel span-4">
+            <div class="panel-heading">
+              <div>
+                <h2>Top IPs</h2>
+                <p>반복 연결과 대용량 전송 후보입니다.</p>
+              </div>
+            </div>
+            <div id="ips" class="compact-list"></div>
+          </section>
+
+          <section class="panel span-4" id="dlq">
+            <div class="panel-heading">
+              <div>
+                <h2>DLQ Monitor</h2>
+                <p>schema validation 실패 event입니다.</p>
+              </div>
+            </div>
+            <div id="dlq-list" class="compact-list"></div>
+          </section>
+
+          <section class="panel span-8" id="alerts">
+            <div class="panel-heading">
+              <div>
+                <h2>Alert Explorer</h2>
+                <p>Rule, Evidence, Severity를 기준으로 조사 대상을 좁힙니다.</p>
+              </div>
+              <span class="panel-chip" id="visible-alert-count">0건 표시</span>
+            </div>
+            <div id="alerts-list" class="alert-list"></div>
+          </section>
+
+          <section class="panel span-4">
+            <div class="panel-heading">
+              <div>
+                <h2>Process Tree</h2>
+                <p>부모 process와 실행 흐름입니다.</p>
+              </div>
+            </div>
+            <div id="process-tree" class="process-tree"></div>
+          </section>
+
+          <section class="panel span-12">
+            <div class="panel-heading">
+              <div>
+                <h2>Event Log</h2>
+                <p>필터가 적용된 endpoint event 원장입니다.</p>
+              </div>
+              <span class="panel-chip" id="visible-event-count">0개 행</span>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Time</th>
+                    <th>Endpoint</th>
+                    <th>Type</th>
+                    <th>Process</th>
+                    <th>Destination</th>
+                    <th>Bytes Out</th>
+                  </tr>
+                </thead>
+                <tbody id="event-log"></tbody>
+              </table>
+            </div>
+          </section>
+        </main>
+      </div>
+    </div>
+
+    <div class="modal-backdrop" id="report-modal" role="dialog" aria-modal="true" aria-labelledby="report-modal-title" hidden>
+      <article class="report-modal-panel">
+        <div class="modal-heading">
+          <div>
+            <h2 id="report-modal-title">LayerTrace EDR/SIEM 보고서</h2>
+            <p id="report-modal-subtitle">현재 대시보드 결과 기준</p>
+          </div>
+          <button class="icon-button" id="close-report-button" type="button" aria-label="보고서 닫기">X</button>
+        </div>
+        <div id="report-modal-body" class="report-modal-body"></div>
+        <div class="modal-actions">
+          <button class="action-button" id="modal-print-report-button" type="button">PDF로 저장</button>
+          <button class="action-button primary" id="modal-close-report-button" type="button">닫기</button>
+        </div>
+      </article>
+    </div>
+
+    <script src="./data/latest-result.js"></script>
+    <script src="./app.js"></script>
+  </body>
+</html>
