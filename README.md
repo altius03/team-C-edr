@@ -1,6 +1,6 @@
 # LayerTrace EDR/SIEM PoC
 
-**[B조] L7 트래픽 기반 EDR 위협 탐지 및 대응 플랫폼**
+** L7 트래픽 기반 EDR 위협 탐지 및 대응 플랫폼**
 
 Endpoint에서 발생하는 process, network, file, DNS, PCAP, L7 metadata를 모아
 보안 위협을 탐지하고, MITRE ATT&CK 기준으로 분류한 뒤 dashboard와 report로 보여주는
