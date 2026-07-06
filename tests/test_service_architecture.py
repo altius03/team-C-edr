@@ -3,6 +3,7 @@ import json
 import sys
 import tempfile
 import threading
+import time
 import unittest
 from pathlib import Path
 
@@ -35,6 +36,8 @@ class ServiceArchitectureTests(unittest.TestCase):
             self.assertIsNotNone(latest)
             self.assertEqual(latest["status"], "success")
             self.assertGreaterEqual(len(store.list_incidents(severity="critical")), 1)
+            self.assertGreater(store.count_events(), 0)
+            self.assertGreater(store.count_alerts(), 0)
             self.assertEqual(store.get_task(task.task_id).status, TaskStatus.SUCCEEDED)
 
     def test_service_api_exposes_health_dashboard_and_incidents(self) -> None:
@@ -62,8 +65,10 @@ class ServiceArchitectureTests(unittest.TestCase):
                         "X-Tenant-Id": "techeer-demo-lab",
                         "X-Agent-Version": "0.4.0",
                         "X-Payload-Version": "1.1",
+                        "X-Api-Token": "local-dev-token",
                     },
                 )
+                task = _wait_for_task(port, str(accepted["task_id"]))
             finally:
                 server.shutdown()
                 thread.join(timeout=5)
@@ -76,7 +81,10 @@ class ServiceArchitectureTests(unittest.TestCase):
             self.assertGreaterEqual(len(incidents["incidents"]), 1)
             self.assertEqual(report["pdf_export"], "browser_print_to_pdf")
             self.assertEqual(accepted["status"], "accepted")
+            self.assertEqual(accepted["task_status"], "pending")
+            self.assertTrue(accepted["queued"])
             self.assertEqual(accepted["accepted_count"], len(events))
+            self.assertEqual(task["status"], "succeeded")
 
 
 def _get_json(port: int, path: str) -> dict[str, object]:
@@ -115,6 +123,15 @@ def _post_json(port: int, path: str, payload: dict[str, object], headers: dict[s
     if not isinstance(parsed, dict):
         raise AssertionError(f"POST {path} did not return a JSON object: {response_body}")
     return parsed
+
+
+def _wait_for_task(port: int, task_id: str) -> dict[str, object]:
+    for _ in range(40):
+        payload = _get_json(port, f"/v1/tasks/{task_id}")
+        if payload.get("status") in {"succeeded", "failed"}:
+            return payload
+        time.sleep(0.1)
+    raise AssertionError(f"task {task_id} did not finish")
 
 
 if __name__ == "__main__":

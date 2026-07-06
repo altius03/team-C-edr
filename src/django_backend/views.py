@@ -1,13 +1,15 @@
 from __future__ import annotations
 
 import json
+from hmac import compare_digest
 from typing import Any
 
-from django.http import HttpRequest, HttpResponseNotAllowed, JsonResponse
+from django.conf import settings
+from django.http import HttpRequest, HttpResponse, HttpResponseNotAllowed, JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 
+from src.django_backend.queue import enqueue_analysis_job
 from src.service_store import JsonObject
-from src.service_worker import run_default_analysis_job
 
 from .state import get_store
 
@@ -47,31 +49,61 @@ def incidents(request: HttpRequest) -> JsonResponse:
 
 
 @csrf_exempt
-def telemetry_events(request: HttpRequest) -> JsonResponse:
+def telemetry_events(request: HttpRequest) -> HttpResponse:
+    # The ingest endpoint accepts telemetry quickly and lets the worker perform
+    # analysis, which prevents a large upload from tying up the request thread.
     if request.method != "POST":
         return _method_not_allowed(["POST"])
-    payload = _read_json(request)
+    auth_error = _require_api_token(request)
+    if auth_error is not None:
+        return auth_error
+    tenant_error = _require_tenant_headers(request)
+    if tenant_error is not None:
+        return tenant_error
+
+    try:
+        payload = _read_json(request)
+    except (json.JSONDecodeError, UnicodeDecodeError, ValueError) as exc:
+        return _json_error("invalid_json", str(exc), status=400)
+
     events = payload.get("events")
     if not isinstance(events, list):
-        return JsonResponse({"error": "invalid_request", "message": "events must be an array"}, status=400)
+        return _json_error("invalid_request", "events must be an array", status=400)
 
     event_objects = [event for event in events if isinstance(event, dict)]
     store = get_store()
-    run_id = run_default_analysis_job(
+    task = enqueue_analysis_job(
         store,
         events=event_objects,
         input_meta=_input_meta_from_headers(request),
     )
-    latest = store.get_latest_run() or {}
-    summary = latest.get("summary", {})
     return JsonResponse(
         {
             "status": "accepted",
-            "run_id": run_id,
+            "task_id": task.task_id,
+            "task_status": task.status.value,
             "accepted_count": len(event_objects),
-            "dlq_count": summary.get("dlq_event_count", 0) if isinstance(summary, dict) else 0,
+            "queued": True,
         },
         status=202,
+    )
+
+
+def task_detail(request: HttpRequest, task_id: str) -> HttpResponse:
+    if request.method != "GET":
+        return _method_not_allowed(["GET"])
+    try:
+        task = get_store().get_task(task_id)
+    except KeyError:
+        return _json_error("not_found", f"task {task_id} was not found", status=404)
+    return JsonResponse(
+        {
+            "task_id": task.task_id,
+            "task_type": task.task_type,
+            "status": task.status.value,
+            "result": task.result,
+            "error": task.error,
+        }
     )
 
 
@@ -85,6 +117,8 @@ def _read_json(request: HttpRequest) -> JsonObject:
 
 
 def _input_meta_from_headers(request: HttpRequest) -> JsonObject:
+    # These headers make one shared API usable by multiple customers, tenants,
+    # and agent versions without changing the telemetry body schema.
     return {
         "source": "rest_api",
         "customer_id": request.headers.get("X-Customer-Id", "unknown"),
@@ -92,6 +126,32 @@ def _input_meta_from_headers(request: HttpRequest) -> JsonObject:
         "agent_version": request.headers.get("X-Agent-Version", "unknown"),
         "payload_version": request.headers.get("X-Payload-Version", "unknown"),
     }
+
+
+def _require_api_token(request: HttpRequest) -> JsonResponse | None:
+    if not settings.LAYERTRACE_REQUIRE_API_TOKEN:
+        return None
+    expected = str(settings.LAYERTRACE_API_TOKEN)
+    provided = request.headers.get("X-Api-Token", "")
+    authorization = request.headers.get("Authorization", "")
+    if authorization.lower().startswith("bearer "):
+        provided = authorization[7:].strip()
+    if not provided:
+        return _json_error("unauthorized", "X-Api-Token or Bearer token is required", status=401)
+    if not compare_digest(provided, expected):
+        return _json_error("forbidden", "invalid API token", status=403)
+    return None
+
+
+def _require_tenant_headers(request: HttpRequest) -> JsonResponse | None:
+    missing = [
+        name
+        for name in ("X-Customer-Id", "X-Tenant-Id", "X-Agent-Version", "X-Payload-Version")
+        if not request.headers.get(name)
+    ]
+    if missing:
+        return _json_error("missing_headers", f"missing required headers: {', '.join(missing)}", status=400)
+    return None
 
 
 def _latest_report(latest: JsonObject | None) -> JsonObject:
@@ -110,3 +170,7 @@ def _latest_report(latest: JsonObject | None) -> JsonObject:
 
 def _method_not_allowed(methods: list[str]) -> HttpResponseNotAllowed:
     return HttpResponseNotAllowed(methods)
+
+
+def _json_error(code: str, message: str, *, status: int) -> JsonResponse:
+    return JsonResponse({"error": code, "message": message}, status=status)

@@ -2,6 +2,7 @@ import json
 import os
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -47,6 +48,7 @@ class DjangoBackendTests(unittest.TestCase):
                     "X-Tenant-Id": "techeer-demo-lab",
                     "X-Agent-Version": "0.4.0",
                     "X-Payload-Version": "1.1",
+                    "X-Api-Token": "local-dev-token",
                 },
             )
 
@@ -57,6 +59,49 @@ class DjangoBackendTests(unittest.TestCase):
             self.assertEqual(report.json()["pdf_export"], "browser_print_to_pdf")
             self.assertEqual(accepted.status_code, 202)
             self.assertEqual(accepted.json()["accepted_count"], len(events))
+            task_id = accepted.json()["task_id"]
+            for _ in range(40):
+                task = client.get(f"/v1/tasks/{task_id}")
+                if task.json()["status"] in {"succeeded", "failed"}:
+                    break
+                time.sleep(0.1)
+            self.assertEqual(task.json()["status"], "succeeded")
+
+    def test_django_ingest_rejects_missing_token_and_bad_json(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            store = ServiceStore(Path(temp_dir) / "layertrace.sqlite3")
+            store.initialize()
+            set_store(store)
+            client = Client()
+
+            missing_token = client.post(
+                "/v1/telemetry/events",
+                data=json.dumps({"events": []}),
+                content_type="application/json",
+                headers={
+                    "X-Customer-Id": "techeer-demo",
+                    "X-Tenant-Id": "techeer-demo-lab",
+                    "X-Agent-Version": "0.4.0",
+                    "X-Payload-Version": "1.1",
+                },
+            )
+            bad_json = client.post(
+                "/v1/telemetry/events",
+                data="{",
+                content_type="application/json",
+                headers={
+                    "X-Customer-Id": "techeer-demo",
+                    "X-Tenant-Id": "techeer-demo-lab",
+                    "X-Agent-Version": "0.4.0",
+                    "X-Payload-Version": "1.1",
+                    "X-Api-Token": "local-dev-token",
+                },
+            )
+
+            self.assertEqual(missing_token.status_code, 401)
+            self.assertEqual(missing_token.json()["error"], "unauthorized")
+            self.assertEqual(bad_json.status_code, 400)
+            self.assertEqual(bad_json.json()["error"], "invalid_json")
 
 
 if __name__ == "__main__":

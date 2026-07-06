@@ -47,8 +47,10 @@ class DashboardContractTests(unittest.TestCase):
 
         self.assertIn("openapi: 3.", text)
         self.assertIn("/v1/telemetry/events", text)
+        self.assertIn("/v1/tasks/{task_id}", text)
         self.assertIn("X-Customer-Id", text)
         self.assertIn("X-Agent-Version", text)
+        self.assertIn("X-Api-Token", text)
         self.assertIn("REST", text)
         self.assertNotIn("future_transport", text)
 

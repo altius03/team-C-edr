@@ -51,6 +51,8 @@ class ReactDashboardContractTests(unittest.TestCase):
         ):
             self.assertIn(required, app)
         self.assertIn("window.SIEM_RESULT", adapter)
+        self.assertIn("/v1/dashboard/latest", adapter)
+        self.assertIn("VITE_LAYERTRACE_API_BASE_URL", adapter)
         self.assertIn("process_trees", adapter)
         self.assertIn("dlq_events", adapter)
         self.assertIn("value.toLowerCase()", adapter)

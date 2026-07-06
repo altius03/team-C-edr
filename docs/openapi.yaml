@@ -28,6 +28,8 @@ paths:
     post:
       tags: [telemetry]
       summary: Ingest endpoint telemetry events
+      security:
+        - ApiTokenAuth: []
       description: >
         Accepts privacy-safe endpoint telemetry. Process observations from Win32_Process
         and DNS cache observations are submitted as separate event types and correlated
@@ -51,7 +53,7 @@ paths:
                     $ref: "#/components/schemas/TelemetryEvent"
       responses:
         "202":
-          description: Events accepted for local analysis.
+          description: Events accepted and queued for local analysis.
           content:
             application/json:
               schema:
@@ -86,7 +88,7 @@ paths:
           description: Dashboard-compatible range.
           schema:
             type: string
-            enum: [last10m, last1h, last24h]
+            enum: [last10m, last1h, last24h, all]
       responses:
         "200":
           description: Incident list.
@@ -124,7 +126,31 @@ paths:
                   pdf_export:
                     type: string
                     description: Browser print-to-PDF flow in the static dashboard.
+  /v1/tasks/{task_id}:
+    get:
+      tags: [telemetry]
+      summary: Get queued analysis task status
+      parameters:
+        - name: task_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Task status and optional result metadata.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskStatusResponse"
+        "404":
+          description: Task not found.
 components:
+  securitySchemes:
+    ApiTokenAuth:
+      type: apiKey
+      in: header
+      name: X-Api-Token
   parameters:
     CustomerId:
       name: X-Customer-Id
@@ -157,7 +183,7 @@ components:
   schemas:
     HealthResponse:
       type: object
-      required: [status, transport, storage, queue]
+      required: [status, transport, framework, storage, queue]
       properties:
         status:
           type: string
@@ -165,6 +191,9 @@ components:
         transport:
           type: string
           example: REST
+        framework:
+          type: string
+          example: django
         storage:
           type: string
           example: sqlite
@@ -218,17 +247,37 @@ components:
           type: integer
     IngestResponse:
       type: object
-      required: [status, run_id, accepted_count]
+      required: [status, task_id, task_status, accepted_count, queued]
       properties:
         status:
           type: string
           example: accepted
-        run_id:
+        task_id:
           type: string
+        task_status:
+          type: string
+          enum: [pending, running, succeeded, failed]
         accepted_count:
           type: integer
-        dlq_count:
-          type: integer
+        queued:
+          type: boolean
+    TaskStatusResponse:
+      type: object
+      required: [task_id, task_type, status]
+      properties:
+        task_id:
+          type: string
+        task_type:
+          type: string
+        status:
+          type: string
+          enum: [pending, running, succeeded, failed]
+        result:
+          type: object
+          nullable: true
+        error:
+          type: string
+          nullable: true
     DashboardResult:
       type: object
       properties:

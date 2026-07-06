@@ -30,6 +30,7 @@ class QueuedTask:
     status: TaskStatus
     payload: JsonObject
     result: JsonObject | None
+    error: str | None = None
 
 
 class ServiceStore:
@@ -41,6 +42,9 @@ class ServiceStore:
     def initialize(self) -> None:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         with self._connection() as connection:
+            # Keep the full run payload for dashboard rendering, but also split
+            # common analyst queries into indexed tables for incidents, alerts,
+            # and telemetry events.
             connection.executescript(
                 """
                 CREATE TABLE IF NOT EXISTS runs (
@@ -59,6 +63,28 @@ class ServiceStore:
                     payload TEXT NOT NULL,
                     PRIMARY KEY (run_id, incident_id)
                 );
+                CREATE TABLE IF NOT EXISTS alerts (
+                    run_id TEXT NOT NULL,
+                    alert_id TEXT NOT NULL,
+                    rule_id TEXT NOT NULL,
+                    severity TEXT NOT NULL,
+                    risk_score INTEGER NOT NULL,
+                    host_id TEXT NOT NULL,
+                    event_time TEXT NOT NULL,
+                    payload TEXT NOT NULL,
+                    PRIMARY KEY (run_id, alert_id)
+                );
+                CREATE TABLE IF NOT EXISTS events (
+                    run_id TEXT NOT NULL,
+                    event_id TEXT NOT NULL,
+                    event_type TEXT NOT NULL,
+                    host_id TEXT NOT NULL,
+                    event_time TEXT NOT NULL,
+                    process_name TEXT NOT NULL,
+                    destination TEXT NOT NULL,
+                    payload TEXT NOT NULL,
+                    PRIMARY KEY (run_id, event_id)
+                );
                 CREATE TABLE IF NOT EXISTS tasks (
                     task_id TEXT PRIMARY KEY,
                     task_type TEXT NOT NULL,
@@ -69,6 +95,9 @@ class ServiceStore:
                     result TEXT,
                     error TEXT
                 );
+                CREATE INDEX IF NOT EXISTS idx_incidents_severity ON incidents(severity);
+                CREATE INDEX IF NOT EXISTS idx_alerts_host_severity ON alerts(host_id, severity);
+                CREATE INDEX IF NOT EXISTS idx_events_host_type ON events(host_id, event_type);
                 """
             )
 
@@ -77,12 +106,50 @@ class ServiceStore:
         generated_at = _text(payload.get("generated_at")) or _now()
         status = _text(payload.get("status")) or "unknown"
         decision = _text(payload.get("decision")) or "unknown"
+        events = _json_list(payload.get("events"))
+        alerts = _json_list(payload.get("alerts"))
         incidents = _json_list(payload.get("incidents"))
         with self._connection() as connection:
+            # A saved run is the immutable analysis snapshot; child rows make
+            # server-side filtering possible without reparsing the JSON blob.
             connection.execute(
                 "INSERT INTO runs(run_id, generated_at, status, decision, payload) VALUES (?, ?, ?, ?, ?)",
                 (run_id, generated_at, status, decision, _dumps(payload)),
             )
+            for event in events:
+                connection.execute(
+                    """
+                    INSERT INTO events(run_id, event_id, event_type, host_id, event_time, process_name, destination, payload)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        run_id,
+                        _text(event.get("event_id")) or _new_id("event"),
+                        _text(event.get("event_type")) or "unknown",
+                        _text(event.get("host_id")) or "unknown",
+                        _text(event.get("event_time")),
+                        _text(event.get("process_name")) or "-",
+                        _text(event.get("domain")) or _text(event.get("dst_ip")) or "-",
+                        _dumps(event),
+                    ),
+                )
+            for alert in alerts:
+                connection.execute(
+                    """
+                    INSERT INTO alerts(run_id, alert_id, rule_id, severity, risk_score, host_id, event_time, payload)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        run_id,
+                        _text(alert.get("alert_id")) or _new_id("alert"),
+                        _text(alert.get("rule_id")) or "unknown",
+                        _text(alert.get("severity")) or "info",
+                        _int(alert.get("risk_score")),
+                        _text(alert.get("host_id")) or "unknown",
+                        _text(alert.get("event_time")),
+                        _dumps(alert),
+                    ),
+                )
             for incident in incidents:
                 connection.execute(
                     """
@@ -119,6 +186,12 @@ class ServiceStore:
             rows = connection.execute(query, params).fetchall()
         return [_loads_object(row["payload"]) for row in rows]
 
+    def count_events(self) -> int:
+        return self._count_rows("events")
+
+    def count_alerts(self) -> int:
+        return self._count_rows("alerts")
+
     def enqueue_task(self, task_type: str, payload: JsonObject) -> QueuedTask:
         task = QueuedTask(
             task_id=_new_id("task"),
@@ -126,6 +199,7 @@ class ServiceStore:
             status=TaskStatus.PENDING,
             payload=payload,
             result=None,
+            error=None,
         )
         now = _now()
         with self._connection() as connection:
@@ -156,6 +230,7 @@ class ServiceStore:
             status=TaskStatus.RUNNING,
             payload=_loads_object(row["payload"]),
             result=None,
+            error=None,
         )
 
     def complete_task(self, task_id: str, status: TaskStatus, result: JsonObject) -> None:
@@ -163,6 +238,13 @@ class ServiceStore:
             connection.execute(
                 "UPDATE tasks SET status = ?, updated_at = ?, result = ?, error = NULL WHERE task_id = ?",
                 (status.value, _now(), _dumps(result), task_id),
+            )
+
+    def fail_task(self, task_id: str, error: str) -> None:
+        with self._connection() as connection:
+            connection.execute(
+                "UPDATE tasks SET status = ?, updated_at = ?, result = NULL, error = ? WHERE task_id = ?",
+                (TaskStatus.FAILED.value, _now(), error, task_id),
             )
 
     def get_task(self, task_id: str) -> QueuedTask:
@@ -176,12 +258,20 @@ class ServiceStore:
             status=TaskStatus(row["status"]),
             payload=_loads_object(row["payload"]),
             result=_loads_object(row["result"]) if row["result"] else None,
+            error=row["error"],
         )
 
     def _connect(self) -> sqlite3.Connection:
         connection = sqlite3.connect(self.db_path)
         connection.row_factory = sqlite3.Row
         return connection
+
+    def _count_rows(self, table: str) -> int:
+        if table not in {"events", "alerts", "incidents", "runs", "tasks"}:
+            raise ValueError(f"unsupported table: {table}")
+        with self._connection() as connection:
+            row = connection.execute(f"SELECT COUNT(*) AS count FROM {table}").fetchone()
+        return int(row["count"])
 
     @contextmanager
     def _connection(self):

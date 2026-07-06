@@ -7,6 +7,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -348,8 +349,10 @@ def _check_service_http_surface(create_service_server: Any, store: Any, events: 
                 "X-Tenant-Id": "techeer-demo-lab",
                 "X-Agent-Version": "0.4.0",
                 "X-Payload-Version": "1.1",
+                "X-Api-Token": "local-dev-token",
             },
         )
+        task = _wait_for_task(port, str(accepted.get("task_id")))
     finally:
         server.shutdown()
         thread.join(timeout=5)
@@ -362,8 +365,10 @@ def _check_service_http_surface(create_service_server: Any, store: Any, events: 
         failures.append("incidents endpoint did not return critical incidents")
     if report.get("pdf_export") != "browser_print_to_pdf":
         failures.append("latest report endpoint did not expose print-to-PDF metadata")
-    if accepted.get("status") != "accepted" or accepted.get("accepted_count") != len(events):
+    if accepted.get("status") != "accepted" or accepted.get("accepted_count") != len(events) or not accepted.get("queued"):
         failures.append(f"telemetry ingestion endpoint returned unexpected payload: {accepted}")
+    if task.get("status") != "succeeded":
+        failures.append(f"queued analysis task did not complete successfully: {task}")
     return failures
 
 
@@ -403,6 +408,15 @@ def _post_json(port: int, path: str, payload: dict[str, Any], headers: dict[str,
     if not isinstance(parsed, dict):
         raise TypeError(f"POST {path} did not return a JSON object")
     return parsed
+
+
+def _wait_for_task(port: int, task_id: str) -> dict[str, Any]:
+    for _ in range(40):
+        payload = _get_json(port, f"/v1/tasks/{task_id}")
+        if payload.get("status") in {"succeeded", "failed"}:
+            return payload
+        time.sleep(0.1)
+    return {"task_id": task_id, "status": "timeout"}
 
 
 def _check_report_artifacts(result: dict[str, Any]) -> dict[str, Any]:

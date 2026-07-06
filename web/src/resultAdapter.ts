@@ -212,6 +212,11 @@ export function readDashboardResult(): DashboardResult {
 }
 
 export async function loadDashboardResult(signal: AbortSignal): Promise<DashboardResult> {
+  // Prefer the Django API in normal operation. Static artifacts remain as a
+  // fallback so the dashboard can still be reviewed from a built demo bundle.
+  const apiResult = await fetchDashboardApi(signal);
+  if (apiResult) return apiResult;
+
   try {
     const response = await fetch("/latest-result.json", { signal });
     if (!response.ok) {
@@ -224,6 +229,25 @@ export async function loadDashboardResult(signal: AbortSignal): Promise<Dashboar
     }
     return readDashboardResult();
   }
+}
+
+async function fetchDashboardApi(signal: AbortSignal): Promise<DashboardResult | null> {
+  try {
+    const response = await fetch(`${apiBaseUrl()}/v1/dashboard/latest`, { signal });
+    if (!response.ok) return null;
+    const payload = await response.json();
+    const result = adaptResult(payload);
+    return result.status === "empty" ? null : result;
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") {
+      throw error;
+    }
+    return null;
+  }
+}
+
+function apiBaseUrl(): string {
+  return String(import.meta.env.VITE_LAYERTRACE_API_BASE_URL ?? "").replace(/\/$/, "");
 }
 
 export function adaptResult(raw: unknown): DashboardResult {
