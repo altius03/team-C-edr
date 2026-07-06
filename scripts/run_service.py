@@ -17,7 +17,7 @@ from src.service_worker import run_default_analysis_job
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Run the local LayerTrace REST service.")
+    parser = argparse.ArgumentParser(description="Run the local LayerTrace Django REST service.")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8080)
     parser.add_argument("--db-path", type=Path, default=SERVICE_DB_PATH)
@@ -30,7 +30,7 @@ def main() -> int:
     _seed_store(store, seed_latest=not args.no_seed_latest, seed_sample=args.seed_sample)
 
     server = create_service_server((args.host, args.port), store)
-    print(f"LayerTrace REST service listening on http://{args.host}:{args.port}")
+    print(f"LayerTrace Django REST service listening on http://{args.host}:{args.port}")
     print("Available: /v1/health, /v1/dashboard/latest, /v1/incidents, /v1/reports/latest")
     try:
         server.serve_forever()

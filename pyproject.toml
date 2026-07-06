@@ -3,4 +3,6 @@ name = "security-edr-agent-parser"
 version = "0.1.0"
 description = "Offline lightweight EDR agent telemetry parser with rule-based detection and a static dashboard."
 requires-python = ">=3.11"
-dependencies = []
+dependencies = [
+  "Django>=5.2,<6.0",
+]

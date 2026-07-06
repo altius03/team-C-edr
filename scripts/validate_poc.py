@@ -354,7 +354,7 @@ def _check_service_http_surface(create_service_server: Any, store: Any, events: 
         server.shutdown()
         thread.join(timeout=5)
         server.server_close()
-    if health.get("status") != "ok" or health.get("storage") != "sqlite":
+    if health.get("status") != "ok" or health.get("storage") != "sqlite" or health.get("framework") != "django":
         failures.append(f"health endpoint returned unexpected payload: {health}")
     if dashboard.get("status") != "success":
         failures.append("dashboard latest endpoint did not return the saved successful run")

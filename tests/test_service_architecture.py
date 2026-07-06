@@ -70,6 +70,7 @@ class ServiceArchitectureTests(unittest.TestCase):
                 server.server_close()
 
             self.assertEqual(health["status"], "ok")
+            self.assertEqual(health["framework"], "django")
             self.assertEqual(health["storage"], "sqlite")
             self.assertEqual(dashboard["status"], "success")
             self.assertGreaterEqual(len(incidents["incidents"]), 1)
