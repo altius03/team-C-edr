@@ -8,13 +8,12 @@
 
 ## 1. 용어 기준
 
-사용자 피드백의 "컴퓨터 | 우리 | 나가는 것"은 구현/문서에서는 아래 용어로 표현합니다.
 
 | 표현 | 문서/화면 용어 | 의미 |
 |---|---|---|
-| 컴퓨터 | Endpoint fleet | 고객사 기기, 에이전트가 설치되거나 telemetry가 수집되는 host |
-| 우리 | Protected tenant boundary | 고객사 네트워크/테넌트 경계와 SIEM 수집 경계 |
-| 나가는 것 | External destinations | endpoint가 연결한 외부 domain/IP/URL/ASN |
+| Endpoint fleet | 고객사 기기, 에이전트가 설치되거나 telemetry가 수집되는 host |
+| Protected tenant boundary | 고객사 네트워크/테넌트 경계와 SIEM 수집 경계 |
+| External destinations | endpoint가 연결한 외부 domain/IP/URL/ASN |
 
 현재 dashboard 첫 화면도 `Endpoint fleet -> Protected tenant boundary -> External destinations` 토폴로지로 표시합니다.
 
