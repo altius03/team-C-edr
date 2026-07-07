@@ -1,13 +1,10 @@
 services:
-  # Stateful store for API persistence during local PoC runs.
   postgres:
     image: postgres:16-alpine
     environment:
       POSTGRES_DB: layertrace
       POSTGRES_USER: layertrace
-      POSTGRES_PASSWORD: layertrace
-    ports:
-      - "5432:5432"
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
@@ -16,31 +13,13 @@ services:
       timeout: 3s
       retries: 10
 
-  # Kafka-compatible broker for stream-oriented ingestion tests.
-  redpanda:
-    image: redpandadata/redpanda:latest
-    command:
-      - redpanda
-      - start
-      - --mode=dev-container
-      - --smp=1
-      - --memory=512M
-      - --reserve-memory=0M
-      - --overprovisioned
-      - --kafka-addr=PLAINTEXT://0.0.0.0:9092
-      - --advertise-kafka-addr=PLAINTEXT://redpanda:9092
-    ports:
-      - "9092:9092"
-      - "9644:9644"
-
-  # API uses token-required local defaults and delegates background work externally.
   api:
     build:
       context: .
       dockerfile: Dockerfile.api
     environment:
-      DATABASE_URL: postgresql+psycopg://layertrace:layertrace@postgres:5432/layertrace
-      LAYERTRACE_API_TOKEN: ${LAYERTRACE_API_TOKEN:-local-dev-token}
+      DATABASE_URL: &database-url postgresql+psycopg://layertrace:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/layertrace
+      LAYERTRACE_API_TOKEN: ${LAYERTRACE_API_TOKEN:?Set LAYERTRACE_API_TOKEN in .env}
       LAYERTRACE_REQUIRE_API_TOKEN: "true"
       LAYERTRACE_TASK_RUNNER: external
       LAYERTRACE_LOG_LEVEL: INFO
@@ -58,7 +37,7 @@ services:
       dockerfile: Dockerfile.api
     command: ["uv", "run", "python", "scripts/run_worker.py", "--poll-interval", "1"]
     environment:
-      DATABASE_URL: postgresql+psycopg://layertrace:layertrace@postgres:5432/layertrace
+      DATABASE_URL: *database-url
       LAYERTRACE_LOG_LEVEL: INFO
     depends_on:
       postgres:
@@ -71,6 +50,7 @@ services:
       dockerfile: Dockerfile.frontend
       args:
         VITE_LAYERTRACE_API_BASE_URL: ${VITE_LAYERTRACE_API_BASE_URL:-http://localhost:8080}
+        VITE_LAYERTRACE_ALLOW_DEMO_FALLBACK: ${VITE_LAYERTRACE_ALLOW_DEMO_FALLBACK:-false}
     ports:
       - "3000:80"
     depends_on:

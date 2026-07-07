@@ -88,7 +88,7 @@ outputs/pipeline/latest/telemetry_bundle.json.gz
 
 ## 리액트 대시보드
 
-리액트 대시보드는 FastAPI가 보이면 `/v1/dashboard/latest`를 먼저 읽고, 없으면 `web/public/latest-result.json` 정적 대체 파일을 사용합니다.
+리액트 대시보드는 `/v1/dashboard/latest`를 먼저 읽습니다. 운영 빌드에서 API가 실패하면 `api_error` 상태를 표시하며, `web/public/latest-result.json` 정적 대체 파일은 `VITE_LAYERTRACE_ALLOW_DEMO_FALLBACK=true` 같은 demo/local flag를 명시한 경우에만 사용합니다.
 
 ```powershell
 npm install
@@ -100,6 +100,7 @@ npm run preview
 
 ```powershell
 $env:VITE_LAYERTRACE_API_BASE_URL="http://localhost:8080"
+$env:VITE_LAYERTRACE_ALLOW_DEMO_FALLBACK="false"
 npm run build
 ```
 
@@ -109,11 +110,15 @@ npm run build
 
 ## Docker Compose 실행
 
-PostgreSQL, FastAPI, 워커, 리액트 프론트엔드, Redpanda 브로커 경계를 함께 띄웁니다. Redpanda는 현재 실행 가능한 브로커 경계로만 두며, outbox publisher 서비스는 포함하지 않습니다.
+Default compose deployment starts PostgreSQL, API, worker, and frontend only. Redpanda/Kafka is intentionally excluded until a real outbox publisher and consumer exist; any outbox rows remain stored in PostgreSQL and are not published by this stack.
 
 ```powershell
+Copy-Item .env.example .env
+# Set POSTGRES_PASSWORD and LAYERTRACE_API_TOKEN in .env before starting.
 npm run local:up
 ```
+
+기존 PostgreSQL 데이터베이스에 이번 lineage schema를 적용할 때는 배포 전에 `migrations/20260707_deployment_lineage.sql`을 실행합니다. 새 데이터베이스는 서비스 시작 시 SQLAlchemy 모델에서 동일한 테이블과 FK를 생성합니다.
 
 접속 주소:
 
@@ -123,7 +128,6 @@ npm run local:up
 | FastAPI 문서 | `http://localhost:8080/docs` |
 | OpenAPI JSON | `http://localhost:8080/openapi.json` |
 | 상태 확인 | `http://localhost:8080/v1/health` |
-| Redpanda Kafka API | `localhost:9092` |
 
 종료:
 
@@ -203,7 +207,7 @@ Windows 수집 경로는 분리되어 있습니다.
 로컬 REST 서버 실행:
 
 ```powershell
-uv run python scripts\run_service.py --seed-sample
+uv run python scripts\run_service.py --no-seed-latest
 ```
 
 구현된 엔드포인트:
@@ -299,7 +303,7 @@ scripts/uninstall_mac_agent.sh
 
 ## 대시보드
 
-대시보드는 `web/`의 React/Vite 앱입니다. FastAPI가 실행 중이면 `/v1/dashboard/latest`를 우선 읽고, 단독 미리보기에서는 `web/public/latest-result.json`을 fallback 데이터로 사용합니다.
+대시보드는 `web/`의 React/Vite 앱입니다. `/v1/dashboard/latest`를 우선 읽고, 운영 모드에서 API 실패 시 `api_error` 상태를 표시합니다. 단독 demo 미리보기에서만 `VITE_LAYERTRACE_ALLOW_DEMO_FALLBACK=true`를 지정해 `web/public/latest-result.json` fallback 데이터를 사용할 수 있습니다.
 
 주요 화면:
 
@@ -425,7 +429,7 @@ team-C-edr/
 | L7 샘플 포함 | `uv run python -m src.run --l7-file samples\decrypted_l7_records.json` |
 | PCAP 포함 | `uv run python -m src.run --pcap-file samples\some_capture.pcap` |
 | 파이프라인 전송 테스트 | `uv run python -m src.run --ship-url http://127.0.0.1:9000/ingest` |
-| REST 서비스 실행 | `uv run python scripts\run_service.py --seed-sample` |
+| REST 서비스 실행 | `uv run python scripts\run_service.py --no-seed-latest` |
 | 외부 워커 1회 실행 | `uv run python scripts\run_worker.py --once` |
 | 리액트 빌드 | `npm run build` |
 | 리액트 미리보기 | `npm run preview` |
@@ -457,7 +461,7 @@ team-C-edr/
 - MITRE ATT&CK 매핑은 규칙 기반 후보 매핑입니다.
 - 대시보드는 React/Vite 빌드입니다. 로그인과 실시간 스트리밍 서버는 없습니다.
 - 데이터베이스는 SQLAlchemy 기반 PostgreSQL 저장소입니다.
-- 큐는 PostgreSQL 작업 상태와 로컬/외부 워커 경계입니다. Redpanda는 Docker Compose 경계로만 포함되어 있고 outbox publisher는 없습니다.
+- 큐는 PostgreSQL 작업 상태와 로컬/외부 워커 경계입니다. Redpanda/Kafka는 실제 outbox publisher와 consumer가 생기기 전까지 기본 Docker Compose 배포에서 제외됩니다.
 - macOS 패킷 캡처는 실제 Mac에서 sudo/tcpdump 권한 검증이 필요합니다.
 
 ---

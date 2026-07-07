@@ -18,4 +18,4 @@ COPY web/public ./web/public
 
 EXPOSE 8080
 
-CMD ["uv", "run", "python", "scripts/run_service.py", "--host", "0.0.0.0", "--port", "8080", "--task-runner", "external", "--no-seed-latest", "--seed-sample"]
+CMD ["uv", "run", "python", "scripts/run_service.py", "--host", "0.0.0.0", "--port", "8080", "--task-runner", "external", "--no-seed-latest"]

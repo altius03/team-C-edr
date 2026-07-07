@@ -8,10 +8,11 @@ from dataclasses import dataclass
 from hmac import compare_digest
 from typing import Final
 
-from fastapi import FastAPI, Request, status
+from fastapi import Depends, FastAPI, Request, Security, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.security import APIKeyHeader
 from pydantic import ValidationError
 
 from .api_models import (
@@ -31,6 +32,7 @@ from .service_store import JsonObject, JsonValue, ServiceStore
 from .task_queue import DatabaseTaskQueue, LocalTaskRunner, TaskQueue
 
 LOGGER = logging.getLogger(__name__)
+_API_TOKEN_HEADER = APIKeyHeader(name="X-Api-Token", auto_error=False)
 
 _INGEST_HEADER_PARAMETERS: Final[list[JsonObject]] = [
     {"name": "X-Customer-Id", "in": "header", "required": True, "schema": {"type": "string"}},
@@ -75,42 +77,30 @@ def create_app(
 
     @app.exception_handler(ApiError)
     async def api_error_handler(_: Request, exc: ApiError) -> JSONResponse:
-        """Render service-raised API errors without leaking implementation details."""
-
         return _json_error(exc.code, exc.message, exc.status_code)
 
     @app.exception_handler(RequestValidationError)
     async def request_validation_handler(_: Request, exc: RequestValidationError) -> JSONResponse:
-        """Normalize FastAPI request parsing failures into the service error shape."""
-
         code = _validation_error_code(exc)
         return _json_error(code, str(exc.errors()[0].get("msg", "invalid request")), status.HTTP_400_BAD_REQUEST)
 
     @app.get("/v1/health", response_model=HealthResponse, tags=["health"])
     def health(request: Request) -> HealthResponse:
-        """Expose liveness plus the active storage and queue adapters."""
-
         return HealthResponse(storage=_store(request).storage_label, queue=_queue(request).queue_label)
 
-    @app.get("/v1/dashboard/latest", response_model=DashboardResult, tags=["dashboard"])
+    @app.get("/v1/dashboard/latest", response_model=DashboardResult, tags=["dashboard"], dependencies=[Depends(_require_read_token_dependency)])
     def dashboard_latest(request: Request) -> DashboardResult:
-        """Return the newest persisted analysis result for dashboard rendering."""
-
         latest = _store(request).get_latest_run()
         if latest is None:
             return DashboardResult(status="empty", message="no analysis run stored yet")
         return DashboardResult.model_validate(latest)
 
-    @app.get("/v1/reports/latest", response_model=ReportLatestResponse, tags=["reports"])
+    @app.get("/v1/reports/latest", response_model=ReportLatestResponse, tags=["reports"], dependencies=[Depends(_require_read_token_dependency)])
     def reports_latest(request: Request) -> ReportLatestResponse:
-        """Return latest generated report metadata when a run includes it."""
-
         return _latest_report(_store(request).get_latest_run())
 
-    @app.get("/v1/incidents", response_model=IncidentListResponse, tags=["incidents"])
+    @app.get("/v1/incidents", response_model=IncidentListResponse, tags=["incidents"], dependencies=[Depends(_require_read_token_dependency)])
     def incidents(request: Request, severity: Severity | None = None) -> IncidentListResponse:
-        """List persisted incidents, optionally narrowed by severity."""
-
         return IncidentListResponse(incidents=_store(request).list_incidents(severity=severity.value if severity else None))
 
     @app.post(
@@ -119,13 +109,11 @@ def create_app(
         status_code=status.HTTP_202_ACCEPTED,
         tags=["telemetry"],
         openapi_extra={"parameters": _INGEST_HEADER_PARAMETERS},
+        dependencies=[Depends(_require_api_token_dependency)],
     )
     def telemetry_events(payload: TelemetryBatchRequest, request: Request) -> IngestResponse:
-        """Authenticate and enqueue telemetry for analysis without blocking on work."""
-
-        _require_api_token(request)
         headers = _tenant_headers(request)
-        event_objects = [event for event in payload.events if isinstance(event, dict)]
+        event_objects = payload.events
         task = _queue(request).enqueue_analysis_job(events=event_objects, input_meta=_input_meta(headers))
         LOGGER.info(
             "accepted telemetry batch",
@@ -144,10 +132,8 @@ def create_app(
             queued=True,
         )
 
-    @app.get("/v1/tasks/{task_id}", response_model=TaskStatusResponse, tags=["tasks"])
+    @app.get("/v1/tasks/{task_id}", response_model=TaskStatusResponse, tags=["tasks"], dependencies=[Depends(_require_read_token_dependency)])
     def task_detail(task_id: str, request: Request) -> TaskStatusResponse:
-        """Return queue state and result metadata for a submitted task."""
-
         try:
             task = _store(request).get_task(task_id)
         except KeyError:
@@ -168,15 +154,18 @@ def _settings_from_env() -> ApiSettings:
 
     return ApiSettings(
         require_api_token=_env_bool("LAYERTRACE_REQUIRE_API_TOKEN", True),
-        api_token=os.environ.get("LAYERTRACE_API_TOKEN", "local-dev-token"),
+        api_token=os.environ.get("LAYERTRACE_API_TOKEN", ""),
+        allow_public_reads=_env_bool("LAYERTRACE_ALLOW_PUBLIC_READS", False),
         cors_origins=_env_csv("LAYERTRACE_CORS_ORIGINS") or _default_cors_origins(),
         task_runner=os.environ.get("LAYERTRACE_TASK_RUNNER", "local").strip().lower(),
     )
 
 
-def _task_queue_from_settings(store: ServiceStore, settings: ApiSettings) -> TaskQueue:
-    """Select local execution or database-backed external worker queue mode."""
+def settings_from_env() -> ApiSettings:
+    return _settings_from_env()
 
+
+def _task_queue_from_settings(store: ServiceStore, settings: ApiSettings) -> TaskQueue:
     match settings.task_runner:
         case "external":
             return DatabaseTaskQueue(store)
@@ -187,8 +176,6 @@ def _task_queue_from_settings(store: ServiceStore, settings: ApiSettings) -> Tas
 
 
 def _store(request: Request) -> ServiceStore:
-    """Fetch the configured persistence adapter from FastAPI state."""
-
     store = request.app.state.store
     if not isinstance(store, ServiceStore):
         raise RuntimeError("FastAPI app state does not contain ServiceStore")
@@ -196,8 +183,6 @@ def _store(request: Request) -> ServiceStore:
 
 
 def _queue(request: Request) -> TaskQueue:
-    """Fetch the configured task queue adapter from FastAPI state."""
-
     queue = request.app.state.task_queue
     if not isinstance(queue, TaskQueue):
         raise RuntimeError("FastAPI app state does not contain TaskQueue")
@@ -205,8 +190,6 @@ def _queue(request: Request) -> TaskQueue:
 
 
 def _settings(request: Request) -> ApiSettings:
-    """Fetch immutable API settings from FastAPI state."""
-
     settings = request.app.state.settings
     if not isinstance(settings, ApiSettings):
         raise RuntimeError("FastAPI app state does not contain ApiSettings")
@@ -237,6 +220,8 @@ def _require_api_token(request: Request) -> None:
     settings = _settings(request)
     if not settings.require_api_token:
         return
+    if not settings.api_token:
+        raise ApiError(status.HTTP_503_SERVICE_UNAVAILABLE, "auth_not_configured", "API token is not configured")
     provided = request.headers.get("X-Api-Token", "")
     authorization = request.headers.get("Authorization", "")
     if authorization.lower().startswith("bearer "):
@@ -245,6 +230,16 @@ def _require_api_token(request: Request) -> None:
         raise ApiError(status.HTTP_401_UNAUTHORIZED, "unauthorized", "X-Api-Token or Bearer token is required")
     if not compare_digest(provided, settings.api_token):
         raise ApiError(status.HTTP_403_FORBIDDEN, "forbidden", "invalid API token")
+
+
+def _require_api_token_dependency(request: Request, _: str | None = Security(_API_TOKEN_HEADER)) -> None:
+    _require_api_token(request)
+
+
+def _require_read_token_dependency(request: Request, _: str | None = Security(_API_TOKEN_HEADER)) -> None:
+    if _settings(request).allow_public_reads:
+        return
+    _require_api_token(request)
 
 
 def _input_meta(headers: TenantHeaders) -> JsonObject:

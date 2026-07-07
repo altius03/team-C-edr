@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import TypeAlias
 
 from .config import (
     BASE_DIR,
@@ -17,8 +17,12 @@ from .config import (
 )
 from .report_builder import write_report_artifacts
 
+JsonPrimitive: TypeAlias = str | int | float | bool | None
+JsonValue: TypeAlias = JsonPrimitive | list["JsonValue"] | dict[str, "JsonValue"]
+JsonObject: TypeAlias = dict[str, JsonValue]
 
-def write_result(payload: dict[str, Any]) -> dict[str, Path]:
+
+def write_result(payload: JsonObject) -> dict[str, Path]:
     """Write the result payload fan-out and return every generated path."""
     run_dir = _new_run_dir()
     latest_path = LATEST_OUTPUT_DIR / "result.json"
@@ -40,7 +44,7 @@ def write_result(payload: dict[str, Any]) -> dict[str, Path]:
     payload["dashboard"] = {
         "react_data_path": str(dashboard_paths["react_data_path"]),
         "api_path": "/v1/dashboard/latest",
-        "open_note": "React 대시보드는 FastAPI API를 우선 읽고, 없으면 web/public/latest-result.json을 사용합니다.",
+        "open_note": "React 대시보드는 FastAPI API를 우선 읽고, demo/local fallback flag가 있을 때만 web/public/latest-result.json을 사용합니다.",
     }
     payload["report"] = {
         "latest_markdown_path": str(report_paths["latest_markdown_path"]),
@@ -63,7 +67,7 @@ def write_result(payload: dict[str, Any]) -> dict[str, Path]:
     }
 
 
-def _write_json(path: Path, payload: dict[str, Any]) -> None:
+def _write_json(path: Path, payload: JsonObject) -> None:
     """Write one UTF-8 JSON file with a trailing newline."""
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
@@ -72,7 +76,7 @@ def _write_json(path: Path, payload: dict[str, Any]) -> None:
     )
 
 
-def _write_dashboard_data(payload: dict[str, Any]) -> dict[str, Path]:
+def _write_dashboard_data(payload: JsonObject) -> dict[str, Path]:
     safe_payload = _repo_safe_payload(payload)
     WEB_DASHBOARD_JSON_PATH.parent.mkdir(parents=True, exist_ok=True)
     WEB_DASHBOARD_JSON_PATH.write_text(
@@ -84,7 +88,7 @@ def _write_dashboard_data(payload: dict[str, Any]) -> dict[str, Path]:
     }
 
 
-def _repo_safe_payload(value: Any) -> Any:
+def _repo_safe_payload(value: JsonValue) -> JsonValue:
     """Recursively convert absolute repo paths inside payload strings."""
     if isinstance(value, dict):
         return {key: _repo_safe_payload(item) for key, item in value.items()}

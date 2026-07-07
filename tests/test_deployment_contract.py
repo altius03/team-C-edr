@@ -21,21 +21,48 @@ class DeploymentContractTests(unittest.TestCase):
     def test_compose_env_and_dependencies_target_split_deployment(self) -> None:
         """Ensure compose, env, and package metadata describe the split stack."""
         compose_path = PROJECT_DIR / "docker-compose.yml"
+        dockerfile = (PROJECT_DIR / "Dockerfile.api").read_text(encoding="utf-8")
+        frontend_dockerfile = (PROJECT_DIR / "Dockerfile.frontend").read_text(encoding="utf-8")
         pyproject = (PROJECT_DIR / "pyproject.toml").read_text(encoding="utf-8")
         env_example = (PROJECT_DIR / ".env.example").read_text(encoding="utf-8")
         package = json.loads((PROJECT_DIR / "package.json").read_text(encoding="utf-8"))
 
         self.assertTrue(compose_path.exists(), "docker-compose.yml is required for local deployment parity")
         compose_text = compose_path.read_text(encoding="utf-8")
-        for required in ("api:", "frontend:", "postgres:", "redpanda:", "worker:"):
+        for required in ("api:", "frontend:", "postgres:", "worker:"):
             self.assertIn(required, compose_text)
+        self.assertNotIn("redpanda:", compose_text)
+        self.assertNotIn("local-dev-token", compose_text)
+        self.assertNotIn("POSTGRES_PASSWORD: layertrace", compose_text)
+        self.assertNotIn(":layertrace@postgres", compose_text)
+        self.assertNotIn("5432:5432", compose_text)
+        self.assertNotIn("--seed-sample", dockerfile)
+        self.assertIn("VITE_LAYERTRACE_ALLOW_DEMO_FALLBACK", frontend_dockerfile)
+        self.assertIn("VITE_LAYERTRACE_ALLOW_DEMO_FALLBACK: ${VITE_LAYERTRACE_ALLOW_DEMO_FALLBACK:-false}", compose_text)
         self.assertNotIn("outbox-publisher", compose_text)
         self.assertIn("psycopg", pyproject)
         self.assertIn("DATABASE_URL=", env_example)
         self.assertIn("LAYERTRACE_API_TOKEN=", env_example)
+        self.assertIn("POSTGRES_PASSWORD=", env_example)
         self.assertIn("VITE_LAYERTRACE_API_BASE_URL=", env_example)
+        self.assertIn("VITE_LAYERTRACE_ALLOW_DEMO_FALLBACK=false", env_example)
         self.assertIn("local:up", package["scripts"])
         self.assertIn("local:down", package["scripts"])
+
+    def test_lineage_schema_change_has_postgres_migration_artifact(self) -> None:
+        migration_path = PROJECT_DIR / "migrations" / "20260707_deployment_lineage.sql"
+
+        self.assertTrue(migration_path.exists(), "deployment lineage schema changes need a Postgres migration file")
+        migration = migration_path.read_text(encoding="utf-8")
+        for required in (
+            "ALTER TABLE runs ADD COLUMN IF NOT EXISTS customer_id",
+            "ALTER TABLE events ADD COLUMN IF NOT EXISTS tenant_id",
+            "CREATE TABLE IF NOT EXISTS alert_events",
+            "CREATE TABLE IF NOT EXISTS incident_alerts",
+            "fk_alert_events_event",
+            "fk_incident_alerts_alert",
+        ):
+            self.assertIn(required, migration)
 
     def test_small_viewport_specific_surface_is_removed(self) -> None:
         """Ensure responsive-specific wording and CSS branches stay out of this PoC."""

@@ -9,6 +9,9 @@ import time
 import unittest
 from pathlib import Path
 
+from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
+
 PROJECT_DIR = Path(__file__).resolve().parents[1]
 if str(PROJECT_DIR) not in sys.path:
     sys.path.insert(0, str(PROJECT_DIR))
@@ -17,6 +20,8 @@ from src.api_models import ApiSettings
 from src.sample_loader import load_events
 from src.service_api import create_service_server
 from src.service_store import ServiceStore, TaskStatus
+from src.service_store_payloads import JsonObject
+from src.service_store_rows import incident_alert_rows
 from src.service_worker import run_default_analysis_job
 from src.task_queue import DatabaseTaskQueue, TaskWorker
 
@@ -45,9 +50,28 @@ class ServiceArchitectureTests(unittest.TestCase):
             self.assertGreaterEqual(len(store.list_incidents(severity="critical")), 1)
             self.assertGreater(store.count_events(), 0)
             self.assertGreater(store.count_alerts(), 0)
+            self.assertGreater(store.count_alert_events(), 0)
+            self.assertGreater(store.count_incident_alerts(), 0)
             self.assertGreater(store.count_dlq_events(), 0)
             self.assertGreaterEqual(store.count_outbox_events(), 3)
             self.assertEqual(store.get_task(task.task_id).status, TaskStatus.SUCCEEDED)
+
+    def test_incident_alert_bridge_does_not_guess_without_alert_or_event_evidence(self) -> None:
+        payload = {
+            "alerts": [{"alert_id": "alert-1", "host_id": "endpoint-1", "event_ids": ["event-1"]}],
+            "incidents": [{"incident_id": "incident-1", "host_id": "endpoint-1"}],
+        }
+
+        self.assertEqual(incident_alert_rows("run-1", payload), [])
+
+    def test_sqlite_store_enforces_lineage_foreign_keys(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            store = ServiceStore(Path(temp_dir) / "layertrace.sqlite3")
+            store.initialize()
+
+            with self.assertRaises(IntegrityError):
+                with store._get_engine().begin() as connection:
+                    connection.execute(text("insert into alert_events (run_id, alert_id, event_id) values ('run-x', 'alert-x', 'event-x')"))
 
     def test_service_api_exposes_health_dashboard_and_incidents(self) -> None:
         """Ensure the local REST API exposes dashboard, incident, report, and task data."""
@@ -57,7 +81,7 @@ class ServiceArchitectureTests(unittest.TestCase):
             events, meta = load_events(PROJECT_DIR / "samples" / "default_events.json")
             run_default_analysis_job(store, events=events, input_meta=meta)
 
-            server = create_service_server(("127.0.0.1", 0), store)
+            server = create_service_server(("127.0.0.1", 0), store, settings=ApiSettings(api_token="local-dev-token", allow_public_reads=True))
             port = server.server_address[1]
             thread = threading.Thread(target=server.serve_forever, daemon=True)
             thread.start()
@@ -108,7 +132,7 @@ class ServiceArchitectureTests(unittest.TestCase):
                 ("127.0.0.1", 0),
                 store,
                 task_queue=task_queue,
-                settings=ApiSettings(require_api_token=True, api_token="local-dev-token", task_runner="external"),
+                settings=ApiSettings(require_api_token=True, api_token="local-dev-token", allow_public_reads=True, task_runner="external"),
             )
             port = server.server_address[1]
             thread = threading.Thread(target=server.serve_forever, daemon=True)
@@ -142,7 +166,7 @@ class ServiceArchitectureTests(unittest.TestCase):
             self.assertEqual(finished["status"], "succeeded")
 
 
-def _get_json(port: int, path: str) -> dict[str, object]:
+def _get_json(port: int, path: str) -> JsonObject:
     """Fetch a JSON object from the temporary service architecture server."""
     connection = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
     try:
@@ -159,7 +183,7 @@ def _get_json(port: int, path: str) -> dict[str, object]:
     return parsed
 
 
-def _post_json(port: int, path: str, payload: dict[str, object], headers: dict[str, str]) -> dict[str, object]:
+def _post_json(port: int, path: str, payload: JsonObject, headers: dict[str, str]) -> JsonObject:
     """Post JSON to the temporary server and require a queued-task response."""
     body = json.dumps(payload).encode("utf-8")
     connection = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
@@ -182,7 +206,7 @@ def _post_json(port: int, path: str, payload: dict[str, object], headers: dict[s
     return parsed
 
 
-def _wait_for_task(port: int, task_id: str) -> dict[str, object]:
+def _wait_for_task(port: int, task_id: str) -> JsonObject:
     """Poll the local task endpoint until the task reaches a final state."""
     for _ in range(40):
         payload = _get_json(port, f"/v1/tasks/{task_id}")

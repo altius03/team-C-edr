@@ -14,6 +14,7 @@ if str(PROJECT_DIR) not in sys.path:
     sys.path.insert(0, str(PROJECT_DIR))
 
 from src.api_app import create_app
+from src.api_models import ApiSettings
 from src.sample_loader import load_events
 from src.service_api import create_service_server
 from src.service_store import JsonObject, JsonValue
@@ -32,7 +33,8 @@ class FastAPIBackendTests(unittest.TestCase):
             events, meta = load_events(PROJECT_DIR / "samples" / "default_events.json")
             run_default_analysis_job(store, events=events, input_meta=meta)
 
-            server = create_service_server(("127.0.0.1", 0), store)
+            settings = ApiSettings(api_token="local-dev-token", allow_public_reads=True)
+            server = create_service_server(("127.0.0.1", 0), store, settings=settings)
             port = server.server_address[1]
             thread = threading.Thread(target=server.serve_forever, daemon=True)
             thread.start()
@@ -59,7 +61,7 @@ class FastAPIBackendTests(unittest.TestCase):
                 thread.join(timeout=5)
                 server.server_close()
 
-            openapi = create_app(store).openapi()
+            openapi = create_app(store, settings=settings).openapi()
             self.assertEqual(health["framework"], "fastapi")
             self.assertEqual(dashboard["status"], "success")
             self.assertGreaterEqual(len(incidents["incidents"]), 1)
@@ -74,7 +76,7 @@ class FastAPIBackendTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             store = ServiceStore(Path(temp_dir) / "layertrace.sqlite3")
             store.initialize()
-            server = create_service_server(("127.0.0.1", 0), store)
+            server = create_service_server(("127.0.0.1", 0), store, settings=ApiSettings(api_token="local-dev-token"))
             port = server.server_address[1]
             thread = threading.Thread(target=server.serve_forever, daemon=True)
             thread.start()
@@ -112,19 +114,86 @@ class FastAPIBackendTests(unittest.TestCase):
             self.assertEqual(bad_json["status"], 400)
             self.assertEqual(bad_json["body"]["error"], "invalid_json")
 
+    def test_fastapi_production_read_endpoints_require_token_and_openapi_security(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            store = ServiceStore(Path(temp_dir) / "layertrace.sqlite3")
+            store.initialize()
+            events, meta = load_events(PROJECT_DIR / "samples" / "default_events.json")
+            run_default_analysis_job(store, events=events, input_meta=meta)
+            settings = ApiSettings(require_api_token=True, api_token="prod-token", task_runner="external")
 
-def _get_json(port: int, path: str) -> JsonObject:
+            server = create_service_server(("127.0.0.1", 0), store, settings=settings)
+            port = server.server_address[1]
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                health = _get_json(port, "/v1/health")
+                protected_paths = ("/v1/dashboard/latest", "/v1/reports/latest", "/v1/incidents", "/v1/tasks/not-real")
+                unauthenticated = {path: _get_raw(port, path)["status"] for path in protected_paths}
+                authenticated_dashboard = _get_json(port, "/v1/dashboard/latest", {"X-Api-Token": "prod-token"})
+            finally:
+                server.shutdown()
+                thread.join(timeout=5)
+                server.server_close()
+
+            openapi = create_app(store, settings=settings).openapi()
+
+        self.assertEqual(health["status"], "ok")
+        self.assertEqual(unauthenticated, {path: 401 for path in protected_paths})
+        self.assertEqual(authenticated_dashboard["status"], "success")
+        for path in ("/v1/dashboard/latest", "/v1/reports/latest", "/v1/incidents", "/v1/tasks/{task_id}"):
+            self.assertTrue(openapi["paths"][path]["get"].get("security"), path)
+
+    def test_fastapi_ingest_rejects_mixed_non_object_event_batch(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            store = ServiceStore(Path(temp_dir) / "layertrace.sqlite3")
+            store.initialize()
+            server = create_service_server(("127.0.0.1", 0), store, settings=ApiSettings(api_token="local-dev-token"))
+            port = server.server_address[1]
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                malformed_batch = _post_raw(
+                    port,
+                    "/v1/telemetry/events",
+                    json.dumps({"events": [{"event_id": "valid-minimal"}, "not-an-object", 42]}),
+                    {
+                        "X-Customer-Id": "techeer-demo",
+                        "X-Tenant-Id": "techeer-demo-lab",
+                        "X-Agent-Version": "0.4.0",
+                        "X-Payload-Version": "1.1",
+                        "X-Api-Token": "local-dev-token",
+                    },
+                )
+            finally:
+                server.shutdown()
+                thread.join(timeout=5)
+                server.server_close()
+
+        self.assertIn(malformed_batch["status"], {400, 422})
+        self.assertIn(malformed_batch["body"]["error"], {"invalid_request", "invalid_event_batch"})
+
+
+def _get_json(port: int, path: str, headers: dict[str, str] | None = None) -> JsonObject:
     """Fetch a JSON object from the temporary HTTP service."""
+    result = _get_raw(port, path, headers)
+    if result["status"] != 200:
+        raise AssertionError(f"GET {path} returned {result['status']}: {result['body']}")
+    body = result["body"]
+    if not isinstance(body, dict):
+        raise AssertionError(f"GET {path} did not return a JSON object: {body}")
+    return body
+
+
+def _get_raw(port: int, path: str, headers: dict[str, str] | None = None) -> JsonObject:
     connection = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
     try:
-        connection.request("GET", path)
+        connection.request("GET", path, headers=headers or {})
         response = connection.getresponse()
         body = response.read().decode("utf-8")
     finally:
         connection.close()
-    if response.status != 200:
-        raise AssertionError(f"GET {path} returned {response.status}: {body}")
-    return _json_body(body)
+    return {"status": response.status, "body": _json_body(body)}
 
 
 def _post_json(port: int, path: str, payload: JsonObject, headers: dict[str, str]) -> JsonObject:

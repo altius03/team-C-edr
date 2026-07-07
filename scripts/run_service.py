@@ -13,9 +13,9 @@ BASE_DIR = Path(__file__).resolve().parents[1]
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
-from src.api_models import ApiSettings
 from src.config import DEFAULT_DATABASE_URL, DEFAULT_EVENTS_PATH, LATEST_OUTPUT_DIR
 from src.sample_loader import load_events
+from src.api_app import settings_from_env
 from src.service_api import create_service_server
 from src.service_store import ServiceStore
 from src.service_worker import run_default_analysis_job
@@ -39,7 +39,7 @@ def main() -> int:
     _seed_store(store, seed_latest=not args.no_seed_latest, seed_sample=args.seed_sample)
 
     task_queue = DatabaseTaskQueue(store) if args.task_runner == "external" else LocalTaskRunner(store)
-    settings = ApiSettings(task_runner=args.task_runner)
+    settings = settings_from_env().model_copy(update={"task_runner": args.task_runner})
     server = create_service_server((args.host, args.port), store, task_queue=task_queue, settings=settings)
     print(f"LayerTrace FastAPI REST service listening on http://{args.host}:{args.port}")
     print(f"Storage: {store.storage_label} / task runner: {task_queue.queue_label}")

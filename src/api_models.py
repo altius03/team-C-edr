@@ -18,7 +18,8 @@ class ApiSettings(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     require_api_token: bool = True
-    api_token: str = "local-dev-token"
+    api_token: str = ""
+    allow_public_reads: bool = False
     cors_origins: list[str] = Field(default_factory=list)
     task_runner: str = "local"
 
@@ -60,7 +61,7 @@ class TelemetryBatchRequest(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    events: list[JsonValue] = Field(default_factory=list)
+    events: list[JsonDocument] = Field(default_factory=list)
 
 
 class IngestResponse(BaseModel):

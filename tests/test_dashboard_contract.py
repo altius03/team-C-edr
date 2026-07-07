@@ -39,6 +39,9 @@ class DashboardContractTests(unittest.TestCase):
         self.assertIn("/v1/dashboard/latest", adapter)
         self.assertIn("latest-result.json", adapter)
         self.assertIn("VITE_LAYERTRACE_API_BASE_URL", adapter)
+        self.assertIn("VITE_LAYERTRACE_ALLOW_DEMO_FALLBACK", adapter)
+        self.assertIn("demo-fallback", adapter)
+        self.assertIn("api_error", adapter)
         self.assertNotIn("window.SIEM_RESULT", adapter)
         self.assertFalse((PROJECT_DIR / "dashboard" / "index.html").exists())
 

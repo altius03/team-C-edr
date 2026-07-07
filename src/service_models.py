@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from sqlalchemy import Index, Integer, String, Text
+from sqlalchemy import ForeignKey, ForeignKeyConstraint, Index, Integer, String, Text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -21,6 +21,8 @@ class RunRow(Base):
     generated_at: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
     status: Mapped[str] = mapped_column(String(40), nullable=False)
     decision: Mapped[str] = mapped_column(String(80), nullable=False)
+    customer_id: Mapped[str] = mapped_column(String(128), nullable=False, default="unknown")
+    tenant_id: Mapped[str] = mapped_column(String(128), nullable=False, default="unknown")
     payload: Mapped[str] = mapped_column(Text, nullable=False)
 
 
@@ -29,8 +31,10 @@ class EventRow(Base):
 
     __tablename__ = "events"
 
-    run_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    run_id: Mapped[str] = mapped_column(String(64), ForeignKey("runs.run_id", ondelete="CASCADE"), primary_key=True)
     event_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    customer_id: Mapped[str] = mapped_column(String(128), nullable=False, default="unknown")
+    tenant_id: Mapped[str] = mapped_column(String(128), nullable=False, default="unknown")
     event_type: Mapped[str] = mapped_column(String(80), nullable=False)
     host_id: Mapped[str] = mapped_column(String(128), nullable=False)
     event_time: Mapped[str] = mapped_column(String(40), nullable=False)
@@ -44,8 +48,13 @@ class AlertRow(Base):
 
     __tablename__ = "alerts"
 
-    run_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    __table_args__ = (ForeignKeyConstraint(["run_id", "primary_event_id"], ["events.run_id", "events.event_id"]),)
+
+    run_id: Mapped[str] = mapped_column(String(64), ForeignKey("runs.run_id", ondelete="CASCADE"), primary_key=True)
     alert_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    customer_id: Mapped[str] = mapped_column(String(128), nullable=False, default="unknown")
+    tenant_id: Mapped[str] = mapped_column(String(128), nullable=False, default="unknown")
+    primary_event_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     rule_id: Mapped[str] = mapped_column(String(40), nullable=False)
     severity: Mapped[str] = mapped_column(String(40), nullable=False)
     risk_score: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -59,8 +68,13 @@ class IncidentRow(Base):
 
     __tablename__ = "incidents"
 
-    run_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    __table_args__ = (ForeignKeyConstraint(["run_id", "primary_alert_id"], ["alerts.run_id", "alerts.alert_id"]),)
+
+    run_id: Mapped[str] = mapped_column(String(64), ForeignKey("runs.run_id", ondelete="CASCADE"), primary_key=True)
     incident_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    customer_id: Mapped[str] = mapped_column(String(128), nullable=False, default="unknown")
+    tenant_id: Mapped[str] = mapped_column(String(128), nullable=False, default="unknown")
+    primary_alert_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     severity: Mapped[str] = mapped_column(String(40), nullable=False)
     risk_score: Mapped[int] = mapped_column(Integer, nullable=False)
     host_display_name: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -72,7 +86,7 @@ class DlqEventRow(Base):
 
     __tablename__ = "dlq_events"
 
-    run_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    run_id: Mapped[str] = mapped_column(String(64), ForeignKey("runs.run_id", ondelete="CASCADE"), primary_key=True)
     dlq_id: Mapped[str] = mapped_column(String(128), primary_key=True)
     event_id: Mapped[str] = mapped_column(String(128), nullable=False)
     error_code: Mapped[str] = mapped_column(String(80), nullable=False)
@@ -107,9 +121,35 @@ class OutboxEventRow(Base):
     created_at: Mapped[str] = mapped_column(String(40), nullable=False)
     payload: Mapped[str] = mapped_column(Text, nullable=False)
 
+
+class AlertEventRow(Base):
+    __tablename__ = "alert_events"
+    __table_args__ = (
+        ForeignKeyConstraint(["run_id", "alert_id"], ["alerts.run_id", "alerts.alert_id"], ondelete="CASCADE"),
+        ForeignKeyConstraint(["run_id", "event_id"], ["events.run_id", "events.event_id"], ondelete="CASCADE"),
+    )
+
+    run_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    alert_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    event_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+
+
+class IncidentAlertRow(Base):
+    __tablename__ = "incident_alerts"
+    __table_args__ = (
+        ForeignKeyConstraint(["run_id", "incident_id"], ["incidents.run_id", "incidents.incident_id"], ondelete="CASCADE"),
+        ForeignKeyConstraint(["run_id", "alert_id"], ["alerts.run_id", "alerts.alert_id"], ondelete="CASCADE"),
+    )
+
+    run_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    incident_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    alert_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+
 # Lookup indexes mirror the REST and dashboard query paths.
 Index("idx_events_host_type", EventRow.host_id, EventRow.event_type)
 Index("idx_alerts_host_severity", AlertRow.host_id, AlertRow.severity)
 Index("idx_incidents_severity", IncidentRow.severity)
+Index("idx_alert_events_event", AlertEventRow.run_id, AlertEventRow.event_id)
+Index("idx_incident_alerts_alert", IncidentAlertRow.run_id, IncidentAlertRow.alert_id)
 Index("idx_dlq_events_error_code", DlqEventRow.error_code)
 Index("idx_outbox_events_status", OutboxEventRow.status)
