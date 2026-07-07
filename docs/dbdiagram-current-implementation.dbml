@@ -1,0 +1,136 @@
+Project layertrace_current_implementation {
+  database_type: 'SQLite/PostgreSQL via SQLAlchemy'
+  Note: '''
+  Current implementation ERD for LayerTrace EDR/SIEM.
+
+  Scope:
+  - Mirrors src/service_models.py exactly at the table/column level.
+  - Relationship lines are logical dbdiagram references based on how ServiceStore writes rows.
+  - The current SQLAlchemy models do not declare ForeignKey constraints.
+  - Extended design tables such as tenants, endpoints, detection_rules, MITRE bridge tables,
+    endpoint_risks, report_artifacts, dashboard_artifacts, and pipeline_bundles are not part
+    of the current persisted schema.
+  '''
+}
+
+Table runs {
+  run_id varchar(64) [pk, not null]
+  generated_at varchar(40) [not null]
+  status varchar(40) [not null]
+  decision varchar(80) [not null]
+  payload text [not null]
+
+  indexes {
+    generated_at [name: 'ix_runs_generated_at']
+  }
+
+  Note: 'Stored analysis run. payload keeps the full dashboard/report/result JSON contract.'
+}
+
+Table events {
+  run_id varchar(64) [not null]
+  event_id varchar(128) [not null]
+  event_type varchar(80) [not null]
+  host_id varchar(128) [not null]
+  event_time varchar(40) [not null]
+  process_name varchar(255) [not null]
+  destination varchar(255) [not null]
+  payload text [not null]
+
+  indexes {
+    (run_id, event_id) [pk]
+    (host_id, event_type) [name: 'idx_events_host_type']
+  }
+
+  Note: 'Normalized telemetry rows derived from runs.payload.events.'
+}
+
+Table alerts {
+  run_id varchar(64) [not null]
+  alert_id varchar(128) [not null]
+  rule_id varchar(40) [not null]
+  severity varchar(40) [not null]
+  risk_score int [not null]
+  host_id varchar(128) [not null]
+  event_time varchar(40) [not null]
+  payload text [not null]
+
+  indexes {
+    (run_id, alert_id) [pk]
+    (host_id, severity) [name: 'idx_alerts_host_severity']
+  }
+
+  Note: 'Normalized alert rows for severity and host lookups. Full evidence and MITRE mapping remain in payload.'
+}
+
+Table incidents {
+  run_id varchar(64) [not null]
+  incident_id varchar(128) [not null]
+  severity varchar(40) [not null]
+  risk_score int [not null]
+  host_display_name varchar(255) [not null]
+  payload text [not null]
+
+  indexes {
+    (run_id, incident_id) [pk]
+    severity [name: 'idx_incidents_severity']
+  }
+
+  Note: 'Normalized incident rows. Current implementation does not store host_id as a first-class column; it remains inside payload.'
+}
+
+Table dlq_events {
+  run_id varchar(64) [not null]
+  dlq_id varchar(128) [not null]
+  event_id varchar(128) [not null]
+  error_code varchar(80) [not null]
+  payload text [not null]
+
+  indexes {
+    (run_id, dlq_id) [pk]
+    error_code [name: 'idx_dlq_events_error_code']
+  }
+
+  Note: 'Dead-letter telemetry rows captured from runs.payload.dlq_events.'
+}
+
+Table tasks {
+  task_id varchar(64) [pk, not null]
+  task_type varchar(80) [not null]
+  status varchar(40) [not null]
+  created_at varchar(40) [not null]
+  updated_at varchar(40) [not null]
+  payload text [not null]
+  result text
+  error text
+
+  indexes {
+    status [name: 'ix_tasks_status']
+  }
+
+  Note: 'Durable task queue row. payload carries events/input_meta; result stores run_id after successful analysis.'
+}
+
+Table outbox_events {
+  outbox_id varchar(64) [pk, not null]
+  event_type varchar(80) [not null]
+  aggregate_type varchar(80) [not null]
+  aggregate_id varchar(128) [not null]
+  status varchar(40) [not null]
+  created_at varchar(40) [not null]
+  payload text [not null]
+
+  indexes {
+    status [name: 'idx_outbox_events_status']
+  }
+
+  Note: 'Polymorphic outbox. aggregate_type/aggregate_id can refer to a run or task, but this is not an enforced FK.'
+}
+
+Ref: events.run_id > runs.run_id
+Ref: alerts.run_id > runs.run_id
+Ref: incidents.run_id > runs.run_id
+Ref: dlq_events.run_id > runs.run_id
+
+// Logical host grouping only: there is no endpoints table in the current implementation.
+// events.host_id and alerts.host_id are plain string dimensions for filtering.
