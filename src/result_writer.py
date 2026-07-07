@@ -9,13 +9,10 @@ from typing import Any
 
 from .config import (
     BASE_DIR,
-    DASHBOARD_DATA_PATH,
-    DASHBOARD_DIR,
     LATEST_OUTPUT_DIR,
     LATEST_REPORT_DIR,
     REPORT_RUNS_DIR,
     RUNS_OUTPUT_DIR,
-    WEB_DASHBOARD_DATA_PATH,
     WEB_DASHBOARD_JSON_PATH,
 )
 from .report_builder import write_report_artifacts
@@ -32,8 +29,7 @@ def write_result(payload: dict[str, Any]) -> dict[str, Path]:
     # Result metadata is injected before writing any artifact so JSON,
     # dashboard data, and reports all point to the same generated paths.
     dashboard_paths = {
-        "index_path": DASHBOARD_DIR / "index.html",
-        "data_script_path": DASHBOARD_DATA_PATH,
+        "react_data_path": WEB_DASHBOARD_JSON_PATH,
     }
     report_paths = {
         "latest_markdown_path": LATEST_REPORT_DIR / "security_report.md",
@@ -42,9 +38,9 @@ def write_result(payload: dict[str, Any]) -> dict[str, Path]:
         "run_html_path": report_run_dir / "security_report.html",
     }
     payload["dashboard"] = {
-        "index_path": str(dashboard_paths["index_path"]),
-        "data_script_path": str(dashboard_paths["data_script_path"]),
-        "open_note": "브라우저에서 dashboard/index.html을 열면 최신 CLI 결과를 볼 수 있습니다.",
+        "react_data_path": str(dashboard_paths["react_data_path"]),
+        "api_path": "/v1/dashboard/latest",
+        "open_note": "React 대시보드는 FastAPI API를 우선 읽고, 없으면 web/public/latest-result.json을 사용합니다.",
     }
     payload["report"] = {
         "latest_markdown_path": str(report_paths["latest_markdown_path"]),
@@ -77,26 +73,14 @@ def _write_json(path: Path, payload: dict[str, Any]) -> None:
 
 
 def _write_dashboard_data(payload: dict[str, Any]) -> dict[str, Path]:
-    """Publish latest dashboard data as static JS and JSON files."""
-    # The dashboard is static HTML, so the CLI publishes its latest result as a
-    # JavaScript assignment instead of requiring a local API server. The React
-    # app consumes the same contract from web/public until the REST API becomes
-    # the primary live data source.
-    script = "window.SIEM_RESULT = "
     safe_payload = _repo_safe_payload(payload)
-    script += json.dumps(safe_payload, ensure_ascii=False, indent=2)
-    script += ";\n"
-    for path in (DASHBOARD_DATA_PATH, WEB_DASHBOARD_DATA_PATH):
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(script, encoding="utf-8")
     WEB_DASHBOARD_JSON_PATH.parent.mkdir(parents=True, exist_ok=True)
     WEB_DASHBOARD_JSON_PATH.write_text(
         json.dumps(safe_payload, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
     )
     return {
-        "index_path": DASHBOARD_DIR / "index.html",
-        "data_script_path": DASHBOARD_DATA_PATH,
+        "react_data_path": WEB_DASHBOARD_JSON_PATH,
     }
 
 

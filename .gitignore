@@ -18,9 +18,9 @@ tsconfig.tsbuildinfo
 .idea/
 .vscode/
 
+# Local-only planning, ERD, and handoff documents
+docs/
+
 # Generated runtime artifacts
 outputs/
-dashboard/data/latest-result.js
-web/public/latest-result.js
 web/public/latest-result.json
-dashboard/server*.log

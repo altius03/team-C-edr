@@ -1,12 +1,12 @@
-# LayerTrace EDR/SIEM PoC
+# LayerTrace EDR/SIEM 개념 검증(PoC)
 
-** L7 트래픽 기반 EDR 위협 탐지 및 대응 플랫폼**
+**L7 트래픽 기반 EDR 위협 탐지 및 대응 플랫폼**
 
-Endpoint에서 발생하는 process, network, file, DNS, PCAP, L7 metadata를 모아
-보안 위협을 탐지하고, MITRE ATT&CK 기준으로 분류한 뒤 dashboard와 report로 보여주는
-로컬 실행형 security PoC입니다.
+엔드포인트에서 발생하는 프로세스, 네트워크, 파일, DNS, PCAP, L7 메타데이터를 모아
+보안 위협을 탐지하고, MITRE ATT&CK 기준으로 분류한 뒤 대시보드와 보고서로 보여주는
+로컬 실행형 보안 개념 검증입니다.
 
-> Python 3.11+ · Node.js/npm React dashboard · PostgreSQL service store · Windows local metadata 수집 지원 · Docker Compose · dashboard/report/OpenAPI 자동 생성
+> Python 3.11+ · Node.js/npm 리액트 대시보드 · PostgreSQL 저장소 · Windows 로컬 메타데이터 수집 지원 · Docker Compose · 대시보드/보고서/OpenAPI 자동 생성
 
 ---
 
@@ -17,16 +17,16 @@ PC 안에서 생기는 여러 보안 신호를 모아서
 미니 EDR + SIEM 플랫폼입니다.
 
 ```text
-sample / local endpoint / PCAP / L7 metadata
--> schema validation / DLQ
--> privacy masking
--> detection rules
--> MITRE ATT&CK mapping
--> AI-style risk prediction
--> response plan
--> SIEM query findings / endpoint egress topology
--> PostgreSQL service store / worker boundary
--> static dashboard + React dashboard + report + gzip pipeline bundle
+샘플 / 로컬 엔드포인트 / PCAP / L7 메타데이터
+-> 스키마 검증 / 실패 대기열(DLQ)
+-> 개인정보 마스킹
+-> 탐지 규칙
+-> MITRE ATT&CK 매핑
+-> 규칙 기반 위험 예측
+-> 대응 계획
+-> SIEM 질의 결과 / 엔드포인트 송신 토폴로지
+-> PostgreSQL 저장소 / 워커 경계
+-> React 대시보드 + 보고서 + gzip 파이프라인 묶음
 ```
 
 ---
@@ -35,30 +35,31 @@ sample / local endpoint / PCAP / L7 metadata
 
 ```mermaid
 flowchart LR
-  subgraph INPUT["Telemetry Sources"]
-    A["Sample events"]
-    B["Windows local metadata"]
-    C["PCAP / TCP flow"]
-    D["Decrypted L7 proxy log"]
-    E["macOS agent PoC"]
+  subgraph INPUT["텔레메트리 출처"]
+    A["샘플 이벤트"]
+    B["Windows 로컬 메타데이터"]
+    C["PCAP / TCP 흐름"]
+    D["복호화된 L7 프록시 로그"]
+    E["macOS 에이전트 PoC"]
   end
 
-  INPUT --> N["Normalize events"]
-  N --> P["Privacy sanitizer"]
-  P --> R["Rule detection R001-R013"]
-  R --> M["MITRE ATT&CK mapping"]
-  M --> X["Response plan"]
-  M --> AI["AI-style host risk"]
+  INPUT --> N["이벤트 정규화"]
+  N --> P["개인정보 정제"]
+  P --> R["규칙 탐지 R001-R013"]
+  R --> M["MITRE ATT&CK 매핑"]
+  M --> X["대응 계획"]
+  M --> AI["호스트 위험도 예측"]
   X --> O["outputs/latest/result.json"]
   AI --> O
-  O --> DB["PostgreSQL service store"]
-  O --> DASH["dashboard/index.html"]
-  O --> REACT["web/ React dashboard"]
-  O --> REP["security_report.html / .md"]
-  O --> PIPE["telemetry_bundle.json.gz"]
+  O --> DB["PostgreSQL 저장소"]
+  O --> REACT["web/ 리액트 대시보드"]
+  DB --> API["FastAPI /v1/dashboard/latest"]
+  API --> REACT
+  O --> REP["보안 보고서 HTML/Markdown"]
+  O --> PIPE["텔레메트리 gzip 묶음"]
 ```
 
-상세 ERD와 SA는 `docs/erd-sa-current.md`에 현재 구현 기준으로 정리했습니다.
+ERD, SA, 작업 계획 같은 문서 산출물은 로컬 `docs/`에만 보관하고 GitHub에는 README만 남깁니다.
 
 ---
 
@@ -73,28 +74,21 @@ uv run python -m src.run
 
 ```text
 outputs/latest/result.json
-dashboard/data/latest-result.js
 web/public/latest-result.json
 outputs/reports/latest/security_report.html
 outputs/reports/latest/security_report.md
 outputs/pipeline/latest/telemetry_bundle.json.gz
 ```
 
-Dashboard는 아래 파일을 브라우저로 열면 됩니다.
-
-```text
-dashboard/index.html
-```
-
 대시보드에서 `보고서 열기`를 누르면 팝업 보고서가 열리고, `PDF로 저장`은 브라우저의 print-to-PDF 흐름을 사용합니다. 사용자 화면에는 raw `result.json` 링크를 노출하지 않습니다.
 
-화면은 현재 읽는 마지막 CLI 실행 결과를 데이터 출처로 표시합니다. 소스를 바꾸려면 `uv run python -m src.run`, `uv run python -m src.run --collect-local`, `uv run python -m src.run --collect-local --include-dns-cache`, `uv run python -m src.run --l7-file samples\decrypted_l7_records.json` 중 하나로 다시 실행한 뒤 dashboard를 새로고침합니다.
+화면은 현재 읽는 마지막 명령줄 실행 결과를 데이터 출처로 표시합니다. 소스를 바꾸려면 `uv run python -m src.run`, `uv run python -m src.run --collect-local`, `uv run python -m src.run --collect-local --include-dns-cache`, `uv run python -m src.run --l7-file samples\decrypted_l7_records.json` 중 하나로 다시 실행한 뒤 대시보드를 새로고침합니다.
 
 ---
 
-## React dashboard
+## 리액트 대시보드
 
-React dashboard는 FastAPI가 보이면 `/v1/dashboard/latest`를 먼저 읽고, 없으면 `web/public/latest-result.json` static fallback을 사용합니다.
+리액트 대시보드는 FastAPI가 보이면 `/v1/dashboard/latest`를 먼저 읽고, 없으면 `web/public/latest-result.json` 정적 대체 파일을 사용합니다.
 
 ```powershell
 npm install
@@ -109,13 +103,13 @@ $env:VITE_LAYERTRACE_API_BASE_URL="http://localhost:8080"
 npm run build
 ```
 
-`npm run preview`는 Vite preview 서버로 `dist/`를 띄웁니다. 데이터 소스를 바꾸는 방식은 동일하게 `uv run python -m src.run ...`을 먼저 다시 실행한 뒤 React 화면을 새로고침하는 흐름입니다.
+`npm run preview`는 Vite 미리보기 서버로 `dist/`를 띄웁니다. 데이터 소스를 바꾸는 방식은 동일하게 `uv run python -m src.run ...`을 먼저 다시 실행한 뒤 리액트 화면을 새로고침하는 흐름입니다.
 
 ---
 
-## Compose 실행
+## Docker Compose 실행
 
-PostgreSQL, FastAPI, worker, React preview, Redpanda broker 경계를 함께 띄웁니다. Redpanda는 이번 단계에서 실행 가능한 broker boundary로만 두며, outbox publisher 서비스는 포함하지 않습니다.
+PostgreSQL, FastAPI, 워커, 리액트 프론트엔드, Redpanda 브로커 경계를 함께 띄웁니다. Redpanda는 현재 실행 가능한 브로커 경계로만 두며, outbox publisher 서비스는 포함하지 않습니다.
 
 ```powershell
 npm run local:up
@@ -123,12 +117,12 @@ npm run local:up
 
 접속 주소:
 
-| Surface | URL |
+| 화면/서비스 | URL |
 |---|---|
-| React dashboard | `http://localhost:3000` |
-| FastAPI docs | `http://localhost:8080/docs` |
+| 리액트 대시보드 | `http://localhost:3000` |
+| FastAPI 문서 | `http://localhost:8080/docs` |
 | OpenAPI JSON | `http://localhost:8080/openapi.json` |
-| Health | `http://localhost:8080/v1/health` |
+| 상태 확인 | `http://localhost:8080/v1/health` |
 | Redpanda Kafka API | `localhost:9092` |
 
 종료:
@@ -147,7 +141,7 @@ npm run local:down
 uv run python scripts\validate_poc.py
 ```
 
-개별 unit test만 돌릴 수도 있습니다.
+개별 단위 테스트만 돌릴 수도 있습니다.
 
 ```powershell
 uv run python -m unittest discover -s tests
@@ -157,15 +151,15 @@ uv run python -m unittest discover -s tests
 
 ---
 
-## 실제 Windows telemetry 수집
+## 실제 Windows 텔레메트리 수집
 
-현재 Windows PC에서 허용된 metadata만 수집해 같은 탐지 엔진과 dashboard에 태웁니다.
+현재 Windows PC에서 허용된 메타데이터만 수집해 같은 탐지 엔진과 대시보드에 태웁니다.
 
 ```powershell
 uv run python -m src.run --collect-local
 ```
 
-DNS cache까지 보고 싶을 때만 명시적으로 켭니다.
+DNS 캐시까지 보고 싶을 때만 명시적으로 켭니다.
 
 ```powershell
 uv run python -m src.run --collect-local --include-dns-cache
@@ -175,25 +169,25 @@ uv run python -m src.run --collect-local --include-dns-cache
 
 | 구분 | 내용 |
 |------|------|
-| Process | process name, path, parent process |
-| Network | established TCP connection, remote IP, remote port, owning process |
-| File | Downloads 폴더의 최근 실행/압축 파일 metadata, hash |
-| DNS optional | DNS cache domain, answer, record type |
+| 프로세스 | 프로세스 이름, 경로, 부모 프로세스 |
+| 네트워크 | 연결된 TCP 세션, 원격 IP, 원격 포트, 소유 프로세스 |
+| 파일 | Downloads 폴더의 최근 실행/압축 파일 메타데이터, 해시 |
+| 선택 DNS | DNS 캐시 도메인, 응답, 레코드 타입 |
 
 수집하지 않는 것:
 
 | 구분 | 이유 |
 |------|------|
-| Packet payload | 민감 데이터 가능성이 높음 |
-| HTTPS body | 승인 없는 본문 수집 방지 |
-| Message/chat content | 개인정보 보호 |
-| Keystroke / clipboard | PoC 범위 밖 |
-| Document body | 원문 내용 수집 방지 |
+| 패킷 본문 | 민감 데이터 가능성이 높음 |
+| HTTPS 본문 | 승인 없는 본문 수집 방지 |
+| 메시지/채팅 내용 | 개인정보 보호 |
+| 키 입력/클립보드 | 개념 검증 범위 밖 |
+| 문서 본문 | 원문 내용 수집 방지 |
 
 Windows 수집 경로는 분리되어 있습니다.
 
-- Process telemetry: Windows `Win32_Process`/process snapshot 계열에서 process name, path, parent process를 가져옵니다.
-- DNS cache telemetry: resolver/cache 관측값을 별도 source로 가져옵니다. DNS 값은 Win32 process에서 직접 나오는 것이 아니라, 나중에 `host_id`, `process_name`, `domain`, `event_time`으로 SIEM 상관분석합니다.
+- 프로세스 텔레메트리: Windows `Win32_Process`/프로세스 스냅샷 계열에서 프로세스 이름, 경로, 부모 프로세스를 가져옵니다.
+- DNS 캐시 텔레메트리: 해석기/캐시 관측값을 별도 출처로 가져옵니다. DNS 값은 Win32 프로세스에서 직접 나오는 것이 아니라, 나중에 `host_id`, `process_name`, `domain`, `event_time`으로 SIEM 상관분석합니다.
 
 ---
 
@@ -212,32 +206,33 @@ Windows 수집 경로는 분리되어 있습니다.
 uv run python scripts\run_service.py --seed-sample
 ```
 
-구현된 endpoint:
+구현된 엔드포인트:
 
-| Endpoint | 용도 |
+| 엔드포인트 | 용도 |
 |---|---|
-| `GET /v1/health` | REST, PostgreSQL, task runner 상태 확인 |
-| `POST /v1/telemetry/events` | telemetry event batch 수신 후 분석 실행 |
-| `GET /v1/dashboard/latest` | PostgreSQL에 저장된 최신 dashboard payload 조회 |
-| `GET /v1/incidents?severity=critical` | incident 조회 및 severity 필터 |
-| `GET /v1/reports/latest` | 최신 report metadata와 print-to-PDF 방식 안내 |
+| `GET /v1/health` | REST, PostgreSQL, 작업 실행기 상태 확인 |
+| `POST /v1/telemetry/events` | 텔레메트리 이벤트 묶음 수신 후 분석 작업 등록 |
+| `GET /v1/tasks/{task_id}` | 등록된 분석 작업의 상태, 결과, 오류 조회 |
+| `GET /v1/dashboard/latest` | PostgreSQL에 저장된 최신 대시보드 페이로드 조회 |
+| `GET /v1/incidents?severity=critical` | 인시던트 조회 및 심각도 필터 |
+| `GET /v1/reports/latest` | 최신 보고서 메타데이터와 브라우저 PDF 저장 방식 안내 |
 
 필수 헤더:
 
-| Header | 의미 |
+| 헤더 | 의미 |
 |---|---|
 | `X-Customer-Id` | 고객사 구분 |
-| `X-Tenant-Id` | tenant 구분 |
-| `X-Agent-Version` | endpoint collector 버전 |
-| `X-Payload-Version` | telemetry schema 버전 |
+| `X-Tenant-Id` | 테넌트 구분 |
+| `X-Agent-Version` | 엔드포인트 수집기 버전 |
+| `X-Payload-Version` | 텔레메트리 스키마 버전 |
 
 이 PoC의 현재 API 범위는 REST와 FastAPI 자동 OpenAPI 문서입니다.
 
 ---
 
-## PCAP / TCP Flow 분석
+## PCAP / TCP 흐름 분석
 
-`.pcap` 파일을 읽어 TCP flow를 만들고, 평문 HTTP 요청이 있으면 `http_request` event로 변환합니다.
+`.pcap` 파일을 읽어 TCP 흐름을 만들고, 평문 HTTP 요청이 있으면 `http_request` 이벤트로 변환합니다.
 
 ```powershell
 uv run python -m src.run --pcap-file samples\some_capture.pcap
@@ -251,16 +246,16 @@ src/pcap_flow.py
 
 ---
 
-## HTTPS / L7 Deep Inspection
+## HTTPS / L7 상세 분석
 
 이 PoC는 임의의 HTTPS를 몰래 복호화하지 않습니다.
-승인된 local proxy/CA 또는 테스트 proxy가 남긴 decrypted L7 metadata를 입력으로 받습니다.
+승인된 로컬 프록시/CA 또는 테스트 프록시가 남긴 복호화 L7 메타데이터를 입력으로 받습니다.
 
 ```powershell
 uv run python -m src.run --l7-file samples\decrypted_l7_records.json
 ```
 
-테스트용 explicit proxy도 포함되어 있습니다.
+테스트용 명시적 프록시도 포함되어 있습니다.
 
 ```powershell
 uv run python scripts\https_inspection_proxy.py --certfile cert.pem --keyfile key.pem --output outputs\l7_proxy\records.jsonl
@@ -276,16 +271,16 @@ scripts/https_inspection_proxy.py
 
 ---
 
-## macOS Agent PoC
+## macOS 에이전트 개념 검증
 
-macOS에서는 `tcpdump` 기반 network metadata를 event schema로 바꿉니다.
+macOS에서는 `tcpdump` 기반 네트워크 메타데이터를 이벤트 스키마로 바꿉니다.
 
 ```bash
 python3 -m src.mac_agent --simulate
 sudo python3 -m src.mac_agent --iface en0 --duration 30
 ```
 
-백그라운드 실행용 LaunchAgent script도 있습니다.
+백그라운드 실행용 LaunchAgent 스크립트도 있습니다.
 
 ```bash
 bash scripts/install_mac_agent.sh
@@ -302,28 +297,28 @@ scripts/uninstall_mac_agent.sh
 
 ---
 
-## Dashboard
+## 대시보드
 
-`dashboard/index.html`은 `dashboard/data/latest-result.js`를 읽어서 최신 분석 결과를 보여줍니다.
+대시보드는 `web/`의 React/Vite 앱입니다. FastAPI가 실행 중이면 `/v1/dashboard/latest`를 우선 읽고, 단독 미리보기에서는 `web/public/latest-result.json`을 fallback 데이터로 사용합니다.
 
 주요 화면:
 
 | 영역 | 내용 |
 |------|------|
-| Endpoint Egress Topology | endpoint fleet, protected tenant boundary, external destinations를 SVG graph로 시각화 |
-| Detection Charts | severity mix, event vs alert volume, MITRE tactic coverage chart |
-| Overview | alert 수, incident 수, endpoint risk, highest risk score |
-| Incident Workbench | Falcon / Cortex 계열 콘솔 느낌의 incident 분석 |
+| 엔드포인트 송신 토폴로지 | 엔드포인트 집합, 보호 테넌트 경계, 외부 목적지를 SVG 그래프로 시각화 |
+| 탐지 차트 | 심각도 구성, 이벤트 대비 알림 수, MITRE 전술 범위 차트 |
+| 개요 | 알림 수, 인시던트 수, 엔드포인트 위험도, 최고 위험 점수 |
+| 인시던트 작업대 | 보안 콘솔 형태의 인시던트 분석 |
 | MITRE ATT&CK | tactic별 탐지 분포 |
-| Timeline | 시간순 위험 이벤트 |
-| Endpoint Risk | host별 risk score |
-| Response Playbook | dry-run response action |
-| Report Center | 최신 HTML/Markdown report 링크 |
-| Data Quality | schema validation, DLQ, privacy masking 결과 |
+| 타임라인 | 시간순 위험 이벤트 |
+| 엔드포인트 위험도 | 호스트별 위험 점수 |
+| 대응 플레이북 | 시뮬레이션 대응 액션 |
+| 보고서 센터 | 최신 HTML/Markdown 보고서 링크 |
+| 데이터 품질 | 스키마 검증, 실패 대기열(DLQ), 개인정보 마스킹 결과 |
 
 ---
 
-## Report
+## 보고서
 
 CLI 실행 시 공유 가능한 보안 분석 보고서가 자동 생성됩니다.
 
@@ -336,39 +331,39 @@ outputs/reports/latest/security_report.md
 
 | 섹션 | 설명 |
 |------|------|
-| Executive Summary | 전체 위험도와 핵심 판단 |
-| Endpoint Risk | host별 위험도 |
-| Incident Summary | 연결된 공격 흐름 |
-| Alert Evidence | 탐지 근거 |
-| MITRE ATT&CK Mapping | 공격 전술/기법 매핑 |
-| Deep Inspection / L7 Visibility | L7 metadata 기반 분석 |
-| AI Prediction / Response Plan | 예측 위험도와 대응 계획 |
-| Pipeline Delivery | gzip telemetry bundle 생성 결과 |
-| Data Quality / DLQ | 유효하지 않은 event 처리 |
-| Recommended Next Actions | 다음 조치 |
-| Limitations | 현재 한계 |
+| 요약 | 전체 위험도와 핵심 판단 |
+| 엔드포인트 위험도 | 호스트별 위험도 |
+| 인시던트 요약 | 연결된 공격 흐름 |
+| 알림 근거 | 탐지 근거 |
+| MITRE ATT&CK 매핑 | 공격 전술/기법 매핑 |
+| L7 상세 분석 | L7 메타데이터 기반 분석 |
+| 위험 예측/대응 계획 | 예측 위험도와 대응 계획 |
+| 파이프라인 전달 | gzip 텔레메트리 묶음 생성 결과 |
+| 데이터 품질/DLQ | 유효하지 않은 이벤트 처리 |
+| 권장 다음 조치 | 다음 조치 |
+| 한계 | 현재 한계 |
 
 ---
 
-## Detection Rules
+## 탐지 규칙
 
-| Rule | 탐지 내용 |
+| 규칙 | 탐지 내용 |
 |------|-----------|
-| R001 | known malicious domain access |
-| R002 | suspicious executable downloaded from browser |
-| R003 | unsigned executable started from Downloads |
-| R004 | periodic external connection |
-| R005 | large outbound transfer |
-| R006 | rare ASN connection outside work hours |
-| R007 | shell process creates network connection |
-| R008 | VPN tunnel plus abnormal transfer |
-| R009 | decrypted L7 malicious URL access |
-| R010 | risky application action with malicious URL |
-| R011 | known malware hash signature match |
-| R012 | response action generated for high-risk detection |
-| R013 | AI predicted high-risk host trajectory |
+| R001 | 알려진 악성 도메인 접근 |
+| R002 | 브라우저를 통한 의심 실행 파일 다운로드 |
+| R003 | Downloads 경로에서 서명되지 않은 실행 파일 시작 |
+| R004 | 주기적인 외부 연결 |
+| R005 | 대량 외부 전송 |
+| R006 | 업무 시간 외 드문 ASN 연결 |
+| R007 | 셸 프로세스의 네트워크 연결 생성 |
+| R008 | VPN 터널과 비정상 전송 결합 |
+| R009 | 복호화된 L7 악성 URL 접근 |
+| R010 | 악성 URL과 연결된 위험 애플리케이션 동작 |
+| R011 | 알려진 악성코드 해시 시그니처 일치 |
+| R012 | 고위험 탐지에 대한 대응 액션 생성 |
+| R013 | 고위험 호스트 흐름 예측 |
 
-Signature sample은 아래 파일에 있습니다.
+시그니처 샘플은 아래 파일에 있습니다.
 
 ```text
 rules/threat_signatures.json
@@ -379,31 +374,28 @@ rules/threat_signatures.json
 ## 프로젝트 구조
 
 ```text
-security_edr_siem_poc/
+team-C-edr/
 ├── src/
-│   ├── run.py              # CLI entrypoint
-│   ├── local_collector.py  # Windows local metadata collector
-│   ├── pcap_flow.py        # PCAP / TCP flow analyzer
-│   ├── l7_inspector.py     # decrypted L7 metadata parser
-│   ├── mac_agent.py        # macOS target agent PoC
-│   ├── detection_engine.py # detection rules + MITRE mapping
-│   ├── siem_analyzer.py    # SIEM findings + endpoint egress topology
-│   ├── ai_predictor.py     # AI-style host risk scoring
-│   ├── response_engine.py  # dry-run response plan
-│   ├── pipeline.py         # gzip bundle / optional ship-url
-│   ├── report_builder.py   # Markdown / HTML report
-│   ├── service_store.py    # PostgreSQL run/incident/task store
-│   ├── service_worker.py   # analysis worker logic
-│   ├── service_api.py      # FastAPI REST API server wrapper
-│   └── privacy.py          # sensitive field masking
-├── dashboard/
-│   ├── index.html
-│   ├── app.js
-│   ├── styles.css
-│   └── data/latest-result.js
+│   ├── run.py              # 명령줄 진입점
+│   ├── local_collector.py  # Windows 로컬 메타데이터 수집기
+│   ├── pcap_flow.py        # PCAP / TCP 흐름 분석기
+│   ├── l7_inspector.py     # 복호화 L7 메타데이터 파서
+│   ├── mac_agent.py        # macOS 대상 에이전트 개념 검증
+│   ├── detection_engine.py # 탐지 규칙 + MITRE 매핑
+│   ├── siem_analyzer.py    # SIEM 결과 + 엔드포인트 송신 토폴로지
+│   ├── ai_predictor.py     # 규칙 기반 호스트 위험 점수
+│   ├── response_engine.py  # 시뮬레이션 대응 계획
+│   ├── pipeline.py         # gzip 묶음 / 선택 전송
+│   ├── report_builder.py   # Markdown/HTML 보고서
+│   ├── service_store.py    # PostgreSQL 실행/인시던트/작업 저장소
+│   ├── service_worker.py   # 분석 워커 로직
+│   ├── service_api.py      # FastAPI REST API 서버 래퍼
+│   └── privacy.py          # 민감 필드 마스킹
 ├── web/
 │   ├── index.html
-│   └── src/                # React/TypeScript dashboard
+│   ├── src/                # 리액트/타입스크립트 대시보드
+│   └── public/
+│       └── latest-result.json
 ├── samples/
 │   ├── default_events.json
 │   └── decrypted_l7_records.json
@@ -412,6 +404,7 @@ security_edr_siem_poc/
 ├── scripts/
 │   ├── build_react.mjs
 │   ├── run_service.py
+│   ├── run_worker.py
 │   ├── validate_poc.py
 │   ├── https_inspection_proxy.py
 │   ├── install_mac_agent.sh
@@ -426,17 +419,19 @@ security_edr_siem_poc/
 
 | 목적 | 명령어 |
 |------|--------|
-| sample data로 실행 | `uv run python -m src.run` |
-| Windows metadata 수집 | `uv run python -m src.run --collect-local` |
-| DNS cache 포함 | `uv run python -m src.run --collect-local --include-dns-cache` |
-| L7 sample 포함 | `uv run python -m src.run --l7-file samples\decrypted_l7_records.json` |
+| 샘플 데이터로 실행 | `uv run python -m src.run` |
+| Windows 메타데이터 수집 | `uv run python -m src.run --collect-local` |
+| DNS 캐시 포함 | `uv run python -m src.run --collect-local --include-dns-cache` |
+| L7 샘플 포함 | `uv run python -m src.run --l7-file samples\decrypted_l7_records.json` |
 | PCAP 포함 | `uv run python -m src.run --pcap-file samples\some_capture.pcap` |
-| pipeline 전송 테스트 | `uv run python -m src.run --ship-url http://127.0.0.1:9000/ingest` |
-| REST service 실행 | `uv run python scripts\run_service.py --seed-sample` |
-| React build | `npm run build` |
-| React preview | `npm run preview` |
+| 파이프라인 전송 테스트 | `uv run python -m src.run --ship-url http://127.0.0.1:9000/ingest` |
+| REST 서비스 실행 | `uv run python scripts\run_service.py --seed-sample` |
+| 외부 워커 1회 실행 | `uv run python scripts\run_worker.py --once` |
+| 리액트 빌드 | `npm run build` |
+| 리액트 미리보기 | `npm run preview` |
+| Docker Compose 상태 확인 | `npm run local:status` |
 | 전체 검증 | `uv run python scripts\validate_poc.py` |
-| unit test | `uv run python -m unittest discover -s tests` |
+| 단위 테스트 | `uv run python -m unittest discover -s tests` |
 
 ---
 
@@ -455,20 +450,20 @@ security_edr_siem_poc/
 
 ## 현재 한계
 
-- Production EDR agent, kernel driver, transparent VPN, packet driver는 아닙니다.
-- HTTPS Deep Inspection은 승인된 proxy/CA 또는 decrypted metadata log가 있어야 합니다.
-- AI prediction은 학습된 ML model이 아니라 feature 기반 risk scoring입니다.
-- Threat intelligence는 `rules/threat_signatures.json`에 있는 sample signature set입니다.
-- MITRE ATT&CK mapping은 rule 기반 후보 매핑입니다.
-- Dashboard는 정적 HTML/JS와 React build를 함께 제공합니다. login, real-time streaming server는 없습니다.
-- DB는 SQLAlchemy 기반 PostgreSQL service store입니다.
-- Queue는 PostgreSQL task 상태와 local/external worker boundary입니다. Redpanda는 compose 경계로만 포함되어 있고 outbox publisher는 없습니다.
-- macOS packet capture는 실제 Mac에서 sudo/tcpdump 권한 검증이 필요합니다.
+- 운영용 EDR 에이전트, 커널 드라이버, 투명 VPN, 패킷 드라이버는 아닙니다.
+- HTTPS 상세 분석은 승인된 프록시/CA 또는 복호화 메타데이터 로그가 있어야 합니다.
+- 위험 예측은 학습된 ML 모델이 아니라 특징 기반 위험 점수 계산입니다.
+- 위협 인텔리전스는 `rules/threat_signatures.json`에 있는 샘플 시그니처 집합입니다.
+- MITRE ATT&CK 매핑은 규칙 기반 후보 매핑입니다.
+- 대시보드는 React/Vite 빌드입니다. 로그인과 실시간 스트리밍 서버는 없습니다.
+- 데이터베이스는 SQLAlchemy 기반 PostgreSQL 저장소입니다.
+- 큐는 PostgreSQL 작업 상태와 로컬/외부 워커 경계입니다. Redpanda는 Docker Compose 경계로만 포함되어 있고 outbox publisher는 없습니다.
+- macOS 패킷 캡처는 실제 Mac에서 sudo/tcpdump 권한 검증이 필요합니다.
 
 ---
 
 ## 안전 안내
 
 이 프로젝트는 교육/시연/연구용 로컬 PoC입니다.
-실제 조직이나 타인의 장비에서 packet capture, HTTPS inspection, endpoint telemetry 수집을 하려면
+실제 조직이나 타인의 장비에서 패킷 캡처, HTTPS 분석, 엔드포인트 텔레메트리 수집을 하려면
 반드시 명시적인 승인과 내부 보안 정책 검토가 필요합니다.

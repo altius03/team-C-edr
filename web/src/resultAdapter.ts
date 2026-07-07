@@ -212,15 +212,8 @@ const KNOWN_ENDPOINTS: readonly Pick<EndpointRisk, "host" | "hostId">[] = [
   { host: "이주호-Desktop", hostId: "endpoint-04" }
 ] as const;
 
-declare global {
-  interface Window {
-    SIEM_RESULT?: unknown;
-  }
-}
-
-// Prefer the live API, then the public JSON artifact, then the embedded static result.
-export function readDashboardResult(): DashboardResult {
-  return adaptResult(window.SIEM_RESULT);
+export function emptyDashboardResult(): DashboardResult {
+  return adaptResult({});
 }
 
 export async function loadDashboardResult(signal: AbortSignal): Promise<DashboardResult> {
@@ -230,14 +223,14 @@ export async function loadDashboardResult(signal: AbortSignal): Promise<Dashboar
   try {
     const response = await fetch("/latest-result.json", { signal });
     if (!response.ok) {
-      return readDashboardResult();
+      return emptyDashboardResult();
     }
     return adaptResult(await response.json());
   } catch (error) {
     if (error instanceof DOMException && error.name === "AbortError") {
       throw error;
     }
-    return readDashboardResult();
+    return emptyDashboardResult();
   }
 }
 

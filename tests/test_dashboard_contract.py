@@ -1,5 +1,3 @@
-"""Protect the static dashboard and generated OpenAPI contract."""
-
 import sys
 import tempfile
 import unittest
@@ -16,38 +14,33 @@ from src.service_store import ServiceStore
 class DashboardContractTests(unittest.TestCase):
     """Check analyst-facing dashboard surfaces and REST schema visibility."""
 
-    def test_dashboard_exposes_required_user_surface(self) -> None:
-        """Ensure the static dashboard keeps required topology, charts, and report controls."""
-        index = (PROJECT_DIR / "dashboard" / "index.html").read_text(encoding="utf-8")
-        app = (PROJECT_DIR / "dashboard" / "app.js").read_text(encoding="utf-8")
+    def test_react_dashboard_exposes_required_user_surface(self) -> None:
+        index = (PROJECT_DIR / "web" / "index.html").read_text(encoding="utf-8")
+        app = (PROJECT_DIR / "web" / "src" / "App.tsx").read_text(encoding="utf-8")
+        adapter = (PROJECT_DIR / "web" / "src" / "resultAdapter.ts").read_text(encoding="utf-8")
 
-        self.assertIn("Endpoint Egress Topology", index)
-        self.assertIn('class="visual-stage', index)
-        self.assertIn('id="egress-topology"', index)
-        self.assertIn('id="detection-charts"', index)
-        self.assertIn('id="detection-chart-panel"', index)
-        self.assertIn('id="alert-inspector"', index)
-        self.assertIn('id="data-source-current"', index)
-        self.assertIn('id="data-source-switch"', index)
-        self.assertIn('id="report-modal"', index)
-        self.assertIn('id="open-report-button"', index)
-        self.assertIn('id="print-report-button"', index)
-        self.assertIn('value="last10m"', index)
-        self.assertIn('value="last1h"', index)
-        self.assertIn('value="last24h"', index)
+        self.assertIn('id="root"', index)
         self.assertNotIn("result JSON", index)
-        self.assertNotIn("../outputs/latest/result.json", index)
 
-        self.assertIn("renderEgressTopology", app)
-        self.assertIn("renderTopologySvg", app)
-        self.assertIn("renderDetectionCharts", app)
-        self.assertIn("renderAlertInspector", app)
-        self.assertIn("Endpoint fleet", app)
-        self.assertIn("Protected tenant boundary", app)
-        self.assertIn("External destinations", app)
-        self.assertIn("python -m src.run --collect-local", app)
-        self.assertIn("openReportModal", app)
-        self.assertIn("EDR 상태", app)
+        for required in (
+            "Endpoint fleet",
+            "Protected tenant boundary",
+            "External destinations",
+            "last10m",
+            "last1h",
+            "last24h",
+            "ReportModal",
+            "Report Center",
+            "DLQ Monitor",
+            "Process Tree",
+            "severityFilter",
+        ):
+            self.assertIn(required, app)
+        self.assertIn("/v1/dashboard/latest", adapter)
+        self.assertIn("latest-result.json", adapter)
+        self.assertIn("VITE_LAYERTRACE_API_BASE_URL", adapter)
+        self.assertNotIn("window.SIEM_RESULT", adapter)
+        self.assertFalse((PROJECT_DIR / "dashboard" / "index.html").exists())
 
     def test_openapi_contract_is_generated_by_fastapi(self) -> None:
         """Ensure FastAPI produces the documented REST paths and deployment terms."""

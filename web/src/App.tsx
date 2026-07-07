@@ -31,8 +31,8 @@ import {
   type ProcessTreeRow,
   type Severity,
   type TimelineItem,
+  emptyDashboardResult,
   loadDashboardResult,
-  readDashboardResult
 } from "./resultAdapter";
 
 type TimeRange = "last10m" | "last1h" | "last24h" | "all";
@@ -51,8 +51,7 @@ const SEVERITIES: readonly Severity[] = ["critical", "warning", "suspicious", "i
 
 // Coordinates dashboard state, filters, and panel data for the main React view.
 export function App() {
-  // Seed from the embedded result so the shell renders before the async source resolves.
-  const [result, setResult] = useState<DashboardResult>(() => readDashboardResult());
+  const [result, setResult] = useState<DashboardResult>(() => emptyDashboardResult());
   const [timeRange, setTimeRange] = useState<TimeRange>("last24h");
   const [severityFilter, setSeverityFilter] = useState<SeverityFilter>("all");
   const [hostFilter, setHostFilter] = useState("all");

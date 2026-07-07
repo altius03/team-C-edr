@@ -179,7 +179,7 @@ def _print_result(paths: dict[str, Path], status: str, decision: str) -> None:
         print(f"decision={decision}")
     print(f"latest={paths['latest_path']}")
     print(f"run={paths['run_path']}")
-    print(f"dashboard={paths['index_path']}")
+    print(f"react_dashboard_data={paths['react_data_path']}")
 
 
 if __name__ == "__main__":

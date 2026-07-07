@@ -20,9 +20,6 @@ if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 LATEST_RESULT_PATH = BASE_DIR / "outputs" / "latest" / "result.json"
 VERIFICATION_DIR = BASE_DIR / "outputs" / "verification"
-DASHBOARD_INDEX_PATH = BASE_DIR / "dashboard" / "index.html"
-DASHBOARD_APP_PATH = BASE_DIR / "dashboard" / "app.js"
-DASHBOARD_DATA_PATH = BASE_DIR / "dashboard" / "data" / "latest-result.js"
 PACKAGE_JSON_PATH = BASE_DIR / "package.json"
 PACKAGE_LOCK_PATH = BASE_DIR / "package-lock.json"
 REACT_INDEX_PATH = BASE_DIR / "web" / "index.html"
@@ -175,54 +172,21 @@ def _check_result_contract(result: dict[str, Any]) -> dict[str, Any]:
 
 
 def _check_dashboard_artifacts() -> dict[str, Any]:
-    """Verify the static dashboard files expose required analyst-facing surfaces."""
     failures: list[str] = []
-    if not DASHBOARD_INDEX_PATH.exists():
-        failures.append(f"missing dashboard index: {DASHBOARD_INDEX_PATH}")
-    else:
-        index = DASHBOARD_INDEX_PATH.read_text(encoding="utf-8")
-        for required in (
-            "Endpoint Egress Topology",
-            'class="visual-stage',
-            'id="detection-chart-panel"',
-            'id="detection-charts"',
-            'id="alert-inspector"',
-            'id="data-source-current"',
-            'id="data-source-switch"',
-            'id="report-modal"',
-            'value="last10m"',
-            'value="last1h"',
-            'value="last24h"',
-        ):
-            if required not in index:
-                failures.append(f"dashboard surface missing: {required}")
-        if "result JSON" in index or "../outputs/latest/result.json" in index:
-            failures.append("dashboard still exposes result JSON link")
-    if not DASHBOARD_APP_PATH.exists():
-        failures.append(f"missing dashboard app: {DASHBOARD_APP_PATH}")
-    else:
-        app = DASHBOARD_APP_PATH.read_text(encoding="utf-8")
-        for required in (
-            "renderTopologySvg",
-            "renderDetectionCharts",
-            "Endpoint fleet",
-            "Protected tenant boundary",
-            "External destinations",
-            "python -m src.run --collect-local",
-        ):
-            if required not in app:
-                failures.append(f"dashboard app missing visual behavior: {required}")
-    if not DASHBOARD_DATA_PATH.exists():
-        failures.append(f"missing dashboard data script: {DASHBOARD_DATA_PATH}")
-    elif "window.SIEM_RESULT" not in DASHBOARD_DATA_PATH.read_text(encoding="utf-8"):
-        failures.append("dashboard data script does not define window.SIEM_RESULT")
     if not WEB_DASHBOARD_JSON_PATH.exists():
         failures.append(f"missing React dashboard JSON: {WEB_DASHBOARD_JSON_PATH}")
+    else:
+        payload = json.loads(WEB_DASHBOARD_JSON_PATH.read_text(encoding="utf-8"))
+        dashboard = payload.get("dashboard", {})
+        if dashboard.get("react_data_path") != "web/public/latest-result.json":
+            failures.append("React dashboard JSON metadata does not point to web/public/latest-result.json")
+        if "dashboard/index.html" in json.dumps(dashboard, ensure_ascii=False):
+            failures.append("React dashboard metadata still points to deleted static dashboard")
 
     return {
-        "name": "dashboard_artifacts",
+        "name": "react_dashboard_artifacts",
         "status": "pass" if not failures else "fail",
-        "details": "dashboard index and latest-result.js are present." if not failures else failures,
+        "details": "React dashboard JSON fallback is present." if not failures else failures,
     }
 
 
@@ -274,8 +238,10 @@ def _check_react_project_contract() -> dict[str, Any]:
             failures.append("React dashboard still exposes result JSON copy")
     if REACT_ADAPTER_PATH.exists():
         adapter = REACT_ADAPTER_PATH.read_text(encoding="utf-8")
-        if "latest-result.json" not in adapter or "window.SIEM_RESULT" not in adapter:
-            failures.append("React adapter must support static JSON and legacy SIEM_RESULT fallback")
+        if "latest-result.json" not in adapter or "/v1/dashboard/latest" not in adapter:
+            failures.append("React adapter must support API-first loading and static JSON fallback")
+        if "window.SIEM_RESULT" in adapter:
+            failures.append("React adapter still depends on legacy SIEM_RESULT fallback")
 
     return {
         "name": "react_project_contract",
@@ -563,8 +529,7 @@ def _build_report(checks: list[dict[str, Any]], result: dict[str, Any]) -> dict[
             "dry-run response plan generation",
             "AI-style host risk prediction",
             "gzip telemetry pipeline bundle",
-            "static SIEM dashboard fed by latest CLI result",
-            "React/TypeScript dashboard build with Vite runtime assets",
+            "React/TypeScript dashboard fed by REST API and latest JSON fallback",
             "SQLAlchemy PostgreSQL service store for runs, events, alerts, incidents, DLQ events, tasks, and outbox events",
             "TaskQueue interface with LocalTaskRunner and external worker mode",
             "REST health, latest dashboard, and incident query endpoints",
