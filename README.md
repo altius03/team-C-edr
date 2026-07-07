@@ -294,12 +294,16 @@ python3 -m src.mac_agent --simulate --collector-url http://127.0.0.1:8080/v1/tel
 
 ```bash
 bash scripts/install_mac_agent.sh
+COLLECTOR_URL=http://127.0.0.1:8080/v1/telemetry/events LAYERTRACE_API_TOKEN=local-dev-token bash scripts/install_mac_agent.sh
 bash scripts/uninstall_mac_agent.sh
 ```
 
-설치 script는 현재 사용자 권한으로 짧은 `tcpdump` preflight를 먼저 실행합니다.
-이미 별도 경로에서 캡처 권한을 검증한 경우에만 `SKIP_TCPDUMP_PREFLIGHT=1`로
-건너뛸 수 있습니다.
+설치 script의 `StartInterval` 기본값은 300초입니다. `COLLECTOR_URL`을 지정하지
+않으면 5분마다 실행만 하고 결과를 `outputs/agent/mac_agent.out.log`에 남깁니다.
+API로 전송하려면 `COLLECTOR_URL`과 `LAYERTRACE_API_TOKEN` 또는 `API_TOKEN`을
+설정해 설치합니다. 설치 script는 현재 사용자 권한으로 짧은 `tcpdump` preflight를
+먼저 실행합니다. 이미 별도 경로에서 캡처 권한을 검증한 경우에만
+`SKIP_TCPDUMP_PREFLIGHT=1`로 건너뛸 수 있습니다.
 
 담당 코드:
 

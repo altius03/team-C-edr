@@ -68,8 +68,18 @@ class FastAPIBackendTests(unittest.TestCase):
             self.assertEqual(report["pdf_export"], "browser_print_to_pdf")
             self.assertEqual(accepted["accepted_count"], len(events))
             self.assertEqual(task["status"], "succeeded")
-            self.assertIn("/v1/telemetry/events", openapi["paths"])
-            self.assertIn("/v1/tasks/{task_id}", openapi["paths"])
+            self.assertTrue(
+                {
+                    "/v1/health",
+                    "/v1/telemetry/events",
+                    "/v1/tasks/{task_id}",
+                    "/v1/dashboard/latest",
+                    "/v1/incidents",
+                    "/v1/reports/latest",
+                }.issubset(openapi["paths"])
+            )
+            self.assertNotIn("/v1/admin/incidents", openapi["paths"])
+            self.assertNotIn("/v1/agent/telemetry/events", openapi["paths"])
 
     def test_fastapi_ingest_rejects_missing_token_and_bad_json(self) -> None:
         """Ensure ingestion rejects unauthenticated and malformed requests."""

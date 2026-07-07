@@ -33,7 +33,7 @@ non-zero exit code를 반환한다.
 
 MVP 기본 주기는 5분이다. 상용 EDR처럼 실시간 커널 이벤트를 붙인 구조가 아니므로, 짧은 데모는 1분, 일반 포트폴리오 시연은 5분, 저부하 장시간 실행은 15분을 권장한다.
 
-Windows에서는 Task Scheduler가 `scripts\run_agent_once.py`를 반복 실행하게 둔다. macOS에서는 launchd `StartInterval` 기본값을 300초로 설정하고, 필요하면 `START_INTERVAL=<초>`로 조정한다. 검증 중에는 스케줄러를 자동 등록하지 않는다. macOS LaunchAgent 설치 script는 같은 사용자 권한으로 짧은 `tcpdump` preflight를 실행해 캡처 권한 실패를 먼저 드러낸다. 이미 별도 절차로 BPF 권한을 검증한 환경에서만 `SKIP_TCPDUMP_PREFLIGHT=1`로 건너뛴다.
+Windows 반복 실행은 현재 별도 설치 script가 없으므로 운영자가 Task Scheduler 등으로 `scripts\run_agent_once.py`를 반복 실행하게 구성해야 한다. macOS에서는 launchd `StartInterval` 기본값을 300초로 설정하고, 필요하면 `START_INTERVAL=<초>`로 조정한다. 단, LaunchAgent가 5분마다 실행된다는 것과 API로 전송한다는 것은 별개다. `COLLECTOR_URL`을 지정하지 않으면 실행 결과를 로컬 stdout 로그에 남기고, API로 전송하려면 `COLLECTOR_URL`과 `LAYERTRACE_API_TOKEN` 또는 `API_TOKEN`을 설정해 `scripts/install_mac_agent.sh`를 설치한다. 검증 중에는 스케줄러를 자동 등록하지 않는다. macOS LaunchAgent 설치 script는 같은 사용자 권한으로 짧은 `tcpdump` preflight를 실행해 캡처 권한 실패를 먼저 드러낸다. 이미 별도 절차로 BPF 권한을 검증한 환경에서만 `SKIP_TCPDUMP_PREFLIGHT=1`로 건너뛴다.
 
 ## Retry Spool
 

@@ -9,6 +9,8 @@ IFACE="${IFACE:-en0}"
 PREFLIGHT_DURATION="${PREFLIGHT_DURATION:-3}"
 PREFLIGHT_LOG="$ROOT_DIR/outputs/agent/mac_agent_preflight.json"
 START_INTERVAL="${START_INTERVAL:-300}"
+COLLECTOR_URL="${COLLECTOR_URL:-}"
+API_TOKEN="${API_TOKEN:-${LAYERTRACE_API_TOKEN:-}}"
 
 mkdir -p "$HOME/Library/LaunchAgents" "$ROOT_DIR/outputs/agent"
 
@@ -55,6 +57,18 @@ OUT_LOG_XML="$(xml_escape StandardOutPath "$ROOT_DIR/outputs/agent/mac_agent.out
 ERR_LOG_XML="$(xml_escape StandardErrorPath "$ROOT_DIR/outputs/agent/mac_agent.err.log")"
 validate_positive_integer START_INTERVAL "$START_INTERVAL"
 validate_positive_integer PREFLIGHT_DURATION "$PREFLIGHT_DURATION"
+COLLECTOR_ARGS_XML=""
+if [[ -n "$COLLECTOR_URL" ]]; then
+  COLLECTOR_URL_XML="$(xml_escape COLLECTOR_URL "$COLLECTOR_URL")"
+  COLLECTOR_ARGS_XML="    <string>--collector-url</string>
+    <string>$COLLECTOR_URL_XML</string>"
+  if [[ -n "$API_TOKEN" ]]; then
+    API_TOKEN_XML="$(xml_escape API_TOKEN "$API_TOKEN")"
+    COLLECTOR_ARGS_XML="$COLLECTOR_ARGS_XML
+    <string>--api-token</string>
+    <string>$API_TOKEN_XML</string>"
+  fi
+fi
 
 cat > "$PLIST" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -73,6 +87,7 @@ cat > "$PLIST" <<PLIST
     <string>$IFACE_XML</string>
     <string>--duration</string>
     <string>60</string>
+$COLLECTOR_ARGS_XML
   </array>
   <key>WorkingDirectory</key>
   <string>$ROOT_DIR_XML</string>
