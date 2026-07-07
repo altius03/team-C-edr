@@ -1,3 +1,5 @@
+"""Protect the default detection-engine contract and privacy guarantees."""
+
 import json
 import sys
 import unittest
@@ -13,7 +15,10 @@ from src.sample_loader import load_events
 
 
 class DetectionEngineTests(unittest.TestCase):
+    """Validate alert coverage, incident mapping, and sanitized output shape."""
+
     def test_default_sample_generates_required_security_outputs(self) -> None:
+        """Ensure the default sample produces enough validated events and alerts."""
         events, meta = load_events(DEFAULT_EVENTS_PATH)
         result = analyze_events(events, input_meta=meta)
 
@@ -25,6 +30,7 @@ class DetectionEngineTests(unittest.TestCase):
         self.assertEqual(result["decision"], "needs_security_review")
 
     def test_core_rules_are_detected(self) -> None:
+        """Ensure the core rule set emits alerts from the default sample."""
         events, meta = load_events(DEFAULT_EVENTS_PATH)
         result = analyze_events(events, input_meta=meta)
         rules = {alert["rule_id"] for alert in result["alerts"]}
@@ -33,6 +39,7 @@ class DetectionEngineTests(unittest.TestCase):
             self.assertIn(rule_id, rules)
 
     def test_attack_chain_and_mitre_mapping_are_created(self) -> None:
+        """Ensure incidents include attack-chain category and MITRE tactics."""
         events, meta = load_events(DEFAULT_EVENTS_PATH)
         result = analyze_events(events, input_meta=meta)
 
@@ -47,6 +54,7 @@ class DetectionEngineTests(unittest.TestCase):
         self.assertIn("Exfiltration", tactics)
 
     def test_privacy_sensitive_values_are_removed_or_masked(self) -> None:
+        """Ensure sensitive sample values are not retained in serialized results."""
         events, meta = load_events(DEFAULT_EVENTS_PATH)
         result = analyze_events(events, input_meta=meta)
         serialized = json.dumps(result, ensure_ascii=False)
@@ -56,6 +64,7 @@ class DetectionEngineTests(unittest.TestCase):
         self.assertGreaterEqual(result["summary"]["privacy_mask_action_count"], 1)
 
     def test_result_includes_named_hosts_and_siem_analysis(self) -> None:
+        """Ensure host labels and SIEM analysis remain available for the dashboard."""
         events, meta = load_events(DEFAULT_EVENTS_PATH)
         result = analyze_events(events, input_meta=meta)
         serialized = json.dumps(result, ensure_ascii=False)

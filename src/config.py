@@ -1,3 +1,5 @@
+"""Static PoC paths, tenant defaults, detection constants, and rule thresholds."""
+
 from pathlib import Path
 
 POC_NAME = "layertrace_edr_siem_poc"

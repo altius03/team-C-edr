@@ -1,3 +1,5 @@
+"""Protect generated Markdown and HTML security report contracts."""
+
 import sys
 import tempfile
 import unittest
@@ -95,7 +97,10 @@ SAMPLE_RESULT = {
 
 
 class ReportBuilderTests(unittest.TestCase):
+    """Check report content sections and artifact writing behavior."""
+
     def test_markdown_and_html_report_include_core_sections(self) -> None:
+        """Ensure reports include SIEM sections, host names, and valid HTML."""
         markdown = build_markdown_report(SAMPLE_RESULT)
         html = build_html_report(SAMPLE_RESULT, markdown)
 
@@ -112,6 +117,7 @@ class ReportBuilderTests(unittest.TestCase):
         self.assertIn("<td>황건하-PC</td>", html)
 
     def test_write_report_artifacts_creates_latest_and_run_outputs(self) -> None:
+        """Ensure report writing creates both latest and run-specific artifacts."""
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
             paths = write_report_artifacts(SAMPLE_RESULT, root / "latest", root / "runs" / "run-001")

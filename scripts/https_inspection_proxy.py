@@ -1,3 +1,5 @@
+"""Capture explicit proxy HTTP metadata for local HTTPS inspection validation."""
+
 from __future__ import annotations
 
 import argparse
@@ -10,11 +12,14 @@ from urllib.parse import urlparse
 
 
 class InspectionProxyHandler(socketserver.StreamRequestHandler):
+    """Handle explicit proxy requests and persist normalized L7 telemetry records."""
+
     certfile: str = ""
     keyfile: str = ""
     output_path: Path = Path("outputs/l7_proxy/records.jsonl")
 
     def handle(self) -> None:
+        """Process one proxied request, including optional CONNECT TLS inspection."""
         line = self.rfile.readline(65536).decode("iso-8859-1", errors="replace").strip()
         if not line:
             return
@@ -58,6 +63,7 @@ class InspectionProxyHandler(socketserver.StreamRequestHandler):
         self.wfile.write(b"HTTP/1.1 204 No Content\r\nContent-Length: 0\r\n\r\n")
 
     def _read_headers(self, stream) -> dict[str, str]:
+        """Read HTTP headers from a socket file until the blank line delimiter."""
         headers: dict[str, str] = {}
         while True:
             line = stream.readline(65536).decode("iso-8859-1", errors="replace")
@@ -68,6 +74,7 @@ class InspectionProxyHandler(socketserver.StreamRequestHandler):
                 headers[name.strip().lower()] = value.strip()
 
     def _record_http_request(self, request_line: str, headers: dict[str, str], connect_host: str, connect_port: int, *, decrypted: bool) -> None:
+        """Normalize one observed HTTP request into the L7 record schema."""
         parts = request_line.split()
         if len(parts) < 2:
             return
@@ -92,17 +99,21 @@ class InspectionProxyHandler(socketserver.StreamRequestHandler):
         )
 
     def _write_record(self, record: dict) -> None:
+        """Append a JSONL record for later ingestion by the LayerTrace pipeline."""
         self.output_path.parent.mkdir(parents=True, exist_ok=True)
         with self.output_path.open("a", encoding="utf-8") as handle:
             handle.write(json.dumps(record, ensure_ascii=False) + "\n")
 
 
 class ThreadingTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
+    """Allow concurrent local proxy clients while keeping shutdown simple."""
+
     allow_reuse_address = True
     daemon_threads = True
 
 
 def main() -> int:
+    """Configure and run the explicit proxy listener."""
     parser = argparse.ArgumentParser(description="Explicit HTTPS inspection proxy PoC")
     parser.add_argument("--listen-host", default="127.0.0.1")
     parser.add_argument("--listen-port", type=int, default=8889)
@@ -122,6 +133,7 @@ def main() -> int:
 
 
 def _now() -> str:
+    """Return an ISO timestamp for proxy-generated telemetry events."""
     return datetime.now(timezone.utc).isoformat()
 
 

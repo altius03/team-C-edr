@@ -1,3 +1,5 @@
+"""Protect local Windows collector mapping without invoking real PowerShell."""
+
 import json
 import sys
 import tempfile
@@ -14,6 +16,7 @@ from src.local_collector import collect_local_events
 
 
 def fake_runner(command: str) -> tuple[int, str, str]:
+    """Return deterministic command output for collector unit tests."""
     if "Win32_Process" in command:
         return (
             0,
@@ -61,7 +64,10 @@ def fake_runner(command: str) -> tuple[int, str, str]:
 
 
 class LocalCollectorTests(unittest.TestCase):
+    """Check collector event normalization and downstream detection compatibility."""
+
     def test_collect_local_events_maps_rows_to_schema(self) -> None:
+        """Ensure process, TCP, DNS, and download observations map into event schema."""
         with tempfile.TemporaryDirectory() as temp_dir:
             download_path = Path(temp_dir) / "tool.zip"
             download_path.write_text("sample", encoding="utf-8")
@@ -83,6 +89,7 @@ class LocalCollectorTests(unittest.TestCase):
         self.assertIn("file_download", {event["event_type"] for event in events})
 
     def test_collected_events_can_be_analyzed(self) -> None:
+        """Ensure collected local events remain valid input for detection analysis."""
         events, meta = collect_local_events(
             command_runner=fake_runner,
             include_dns_cache=True,

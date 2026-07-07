@@ -1,3 +1,5 @@
+"""Define SQLAlchemy tables used by the service store."""
+
 from __future__ import annotations
 
 from sqlalchemy import Index, Integer, String, Text
@@ -5,10 +7,14 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
 class Base(DeclarativeBase):
+    """Declarative base shared by all persisted service rows."""
+
     pass
 
 
 class RunRow(Base):
+    """Stored analysis run with the full original payload retained as JSON."""
+
     __tablename__ = "runs"
 
     run_id: Mapped[str] = mapped_column(String(64), primary_key=True)
@@ -19,6 +25,8 @@ class RunRow(Base):
 
 
 class EventRow(Base):
+    """Normalized telemetry event row derived from a stored run payload."""
+
     __tablename__ = "events"
 
     run_id: Mapped[str] = mapped_column(String(64), primary_key=True)
@@ -32,6 +40,8 @@ class EventRow(Base):
 
 
 class AlertRow(Base):
+    """Normalized alert row used for severity and host lookups."""
+
     __tablename__ = "alerts"
 
     run_id: Mapped[str] = mapped_column(String(64), primary_key=True)
@@ -45,6 +55,8 @@ class AlertRow(Base):
 
 
 class IncidentRow(Base):
+    """Normalized incident row used by dashboard and incident APIs."""
+
     __tablename__ = "incidents"
 
     run_id: Mapped[str] = mapped_column(String(64), primary_key=True)
@@ -56,6 +68,8 @@ class IncidentRow(Base):
 
 
 class DlqEventRow(Base):
+    """Dead-letter telemetry event captured with its schema error code."""
+
     __tablename__ = "dlq_events"
 
     run_id: Mapped[str] = mapped_column(String(64), primary_key=True)
@@ -66,6 +80,8 @@ class DlqEventRow(Base):
 
 
 class TaskRow(Base):
+    """Durable task queue row shared by local and external workers."""
+
     __tablename__ = "tasks"
 
     task_id: Mapped[str] = mapped_column(String(64), primary_key=True)
@@ -79,6 +95,8 @@ class TaskRow(Base):
 
 
 class OutboxEventRow(Base):
+    """Outbox event row for side effects derived from persistence changes."""
+
     __tablename__ = "outbox_events"
 
     outbox_id: Mapped[str] = mapped_column(String(64), primary_key=True)
@@ -89,7 +107,7 @@ class OutboxEventRow(Base):
     created_at: Mapped[str] = mapped_column(String(40), nullable=False)
     payload: Mapped[str] = mapped_column(Text, nullable=False)
 
-
+# Lookup indexes mirror the REST and dashboard query paths.
 Index("idx_events_host_type", EventRow.host_id, EventRow.event_type)
 Index("idx_alerts_host_severity", AlertRow.host_id, AlertRow.severity)
 Index("idx_incidents_severity", IncidentRow.severity)

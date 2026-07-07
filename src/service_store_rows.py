@@ -1,3 +1,5 @@
+"""Convert analysis payload sections into SQLAlchemy row objects."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -19,6 +21,8 @@ _OUTBOX_PENDING: Final = "pending"
 
 @dataclass(frozen=True, slots=True)
 class OutboxRecord:
+    """Input value used to create a durable outbox event row."""
+
     event_type: str
     aggregate_type: str
     aggregate_id: str
@@ -26,22 +30,32 @@ class OutboxRecord:
 
 
 def event_rows(run_id: str, payload: JsonObject) -> list[EventRow]:
+    """Map run payload telemetry events into normalized event rows."""
+
     return [_event_row(run_id, event) for event in json_list(payload.get("events"))]
 
 
 def alert_rows(run_id: str, payload: JsonObject) -> list[AlertRow]:
+    """Map run payload alerts into normalized alert rows."""
+
     return [_alert_row(run_id, alert) for alert in json_list(payload.get("alerts"))]
 
 
 def incident_rows(run_id: str, payload: JsonObject) -> list[IncidentRow]:
+    """Map run payload incidents into normalized incident rows."""
+
     return [_incident_row(run_id, incident) for incident in json_list(payload.get("incidents"))]
 
 
 def dlq_rows(run_id: str, payload: JsonObject) -> list[DlqEventRow]:
+    """Map run payload dead-letter events into normalized DLQ rows."""
+
     return [_dlq_row(run_id, index, event) for index, event in enumerate(json_list(payload.get("dlq_events")), start=1)]
 
 
 def outbox_row(record: OutboxRecord) -> OutboxEventRow:
+    """Create a pending outbox row from a typed outbox record."""
+
     return OutboxEventRow(
         outbox_id=new_id("outbox"),
         event_type=record.event_type,
@@ -54,6 +68,8 @@ def outbox_row(record: OutboxRecord) -> OutboxEventRow:
 
 
 def _event_row(run_id: str, event: JsonObject) -> EventRow:
+    """Map one telemetry JSON object into an event table row."""
+
     return EventRow(
         run_id=run_id,
         event_id=text_value(event.get("event_id")) or new_id("event"),
@@ -67,6 +83,8 @@ def _event_row(run_id: str, event: JsonObject) -> EventRow:
 
 
 def _alert_row(run_id: str, alert: JsonObject) -> AlertRow:
+    """Map one alert JSON object into an alert table row."""
+
     return AlertRow(
         run_id=run_id,
         alert_id=text_value(alert.get("alert_id")) or new_id("alert"),
@@ -80,6 +98,8 @@ def _alert_row(run_id: str, alert: JsonObject) -> AlertRow:
 
 
 def _incident_row(run_id: str, incident: JsonObject) -> IncidentRow:
+    """Map one incident JSON object into an incident table row."""
+
     return IncidentRow(
         run_id=run_id,
         incident_id=text_value(incident.get("incident_id")) or new_id("incident"),
@@ -91,6 +111,8 @@ def _incident_row(run_id: str, incident: JsonObject) -> IncidentRow:
 
 
 def _dlq_row(run_id: str, index: int, event: JsonObject) -> DlqEventRow:
+    """Map one dead-letter event JSON object into a DLQ table row."""
+
     return DlqEventRow(
         run_id=run_id,
         dlq_id=f"{run_id}-dlq-{index:03d}",

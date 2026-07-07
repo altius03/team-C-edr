@@ -1,3 +1,5 @@
+"""Load sample event fixtures and expand compact generated-flow specs."""
+
 from __future__ import annotations
 
 import json
@@ -7,13 +9,17 @@ from typing import Any
 
 
 class SampleLoadError(Exception):
+    """Raised when a sample input cannot be converted into event rows."""
+
     def __init__(self, code: str, message: str, partial_result: dict[str, Any] | None = None) -> None:
+        """Store a stable error code with optional context for failure output."""
         super().__init__(message)
         self.code = code
         self.partial_result = partial_result or {}
 
 
 def load_events(path: Path) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """Read a JSON event file and return event rows with input metadata."""
     if not path.exists():
         raise SampleLoadError(
             "MISSING_INPUT",
@@ -35,6 +41,8 @@ def load_events(path: Path) -> tuple[list[dict[str, Any]], dict[str, Any]]:
         generated_count = 0
     elif isinstance(payload, dict):
         events = list(payload.get("events", []))
+        # Generated flows are compact fixture specs; expand them before adding
+        # intentionally invalid rows so downstream validation sees one stream.
         generated_events = _expand_generated_flows(payload.get("generated_flows", []))
         generated_count = len(generated_events)
         events.extend(generated_events)
@@ -62,6 +70,7 @@ def load_events(path: Path) -> tuple[list[dict[str, Any]], dict[str, Any]]:
 
 
 def _expand_generated_flows(specs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Convert compact flow specifications into timestamped network events."""
     events: list[dict[str, Any]] = []
     for spec in specs:
         count = int(spec.get("count", 0))
@@ -95,4 +104,3 @@ def _expand_generated_flows(specs: list[dict[str, Any]]) -> list[dict[str, Any]]
                 }
             )
     return events
-

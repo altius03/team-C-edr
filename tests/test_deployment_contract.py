@@ -1,3 +1,5 @@
+"""Protect deployment files that keep local and split-service runs aligned."""
+
 import json
 import unittest
 from pathlib import Path
@@ -8,12 +10,16 @@ PROJECT_DIR = Path(__file__).resolve().parents[1]
 
 
 class DeploymentContractTests(unittest.TestCase):
+    """Check storage selection, compose topology, and viewport-scope decisions."""
+
     def test_service_store_accepts_database_url_and_identifies_postgres(self) -> None:
+        """Ensure PostgreSQL URLs select the deployment storage label."""
         store = ServiceStore(database_url="postgresql+psycopg://layertrace:layertrace@localhost:5432/layertrace")
 
         self.assertEqual(store.storage_label, "postgresql")
 
     def test_compose_env_and_dependencies_target_split_deployment(self) -> None:
+        """Ensure compose, env, and package metadata describe the split stack."""
         compose_path = PROJECT_DIR / "docker-compose.yml"
         pyproject = (PROJECT_DIR / "pyproject.toml").read_text(encoding="utf-8")
         env_example = (PROJECT_DIR / ".env.example").read_text(encoding="utf-8")
@@ -32,6 +38,7 @@ class DeploymentContractTests(unittest.TestCase):
         self.assertIn("local:down", package["scripts"])
 
     def test_small_viewport_specific_surface_is_removed(self) -> None:
+        """Ensure responsive-specific wording and CSS branches stay out of this PoC."""
         css = (PROJECT_DIR / "web" / "src" / "styles.css").read_text(encoding="utf-8")
         readme = (PROJECT_DIR / "README.md").read_text(encoding="utf-8").lower()
 

@@ -1,3 +1,5 @@
+"""Parse PCAP files into TCP flow summaries and plaintext HTTP events."""
+
 from __future__ import annotations
 
 import ipaddress
@@ -9,6 +11,8 @@ from typing import Any
 
 
 class PcapFlowError(Exception):
+    """Raised when PCAP bytes are missing or use an unsupported format."""
+
     pass
 
 
@@ -17,6 +21,8 @@ HTTP_METHODS = {b"GET", b"POST", b"PUT", b"DELETE", b"PATCH", b"HEAD", b"OPTIONS
 
 @dataclass
 class FlowState:
+    """Accumulates bidirectional counters for one normalized TCP flow."""
+
     first_ts: float
     last_ts: float
     src_ip: str
@@ -31,11 +37,14 @@ class FlowState:
 
 
 def events_from_pcap(path: Path, *, host_id: str = "pcap-endpoint") -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """Read a PCAP file and return flow/http events with parse metadata."""
     packets = list(_iter_tcp_packets(path))
     flows: dict[tuple, FlowState] = {}
     http_events: list[dict[str, Any]] = []
 
     for packet in packets:
+        # The flow key is direction-neutral; packet direction is recovered by
+        # comparing each packet endpoint with the first packet stored in state.
         key = _flow_key(packet)
         flow = flows.get(key)
         if flow is None:
@@ -120,6 +129,7 @@ def events_from_pcap(path: Path, *, host_id: str = "pcap-endpoint") -> tuple[lis
 
 
 def _iter_tcp_packets(path: Path):
+    """Yield parsed IPv4/TCP packets from classic PCAP record bytes."""
     data = path.read_bytes()
     if len(data) < 24:
         raise PcapFlowError(f"not a pcap file or too short: {path}")
@@ -139,6 +149,7 @@ def _iter_tcp_packets(path: Path):
 
 
 def _pcap_format(magic: bytes) -> tuple[str, int]:
+    """Return struct endianness and timestamp resolution for a PCAP magic."""
     if magic == b"\xd4\xc3\xb2\xa1":
         return "<", 1_000_000
     if magic == b"\xa1\xb2\xc3\xd4":
@@ -151,6 +162,7 @@ def _pcap_format(magic: bytes) -> tuple[str, int]:
 
 
 def _parse_ethernet_ipv4_tcp(frame: bytes) -> dict[str, Any] | None:
+    """Parse one Ethernet frame into TCP metadata and payload bytes."""
     if len(frame) < 54:
         return None
     eth_type = struct.unpack("!H", frame[12:14])[0]
@@ -189,6 +201,7 @@ def _parse_ethernet_ipv4_tcp(frame: bytes) -> dict[str, Any] | None:
 
 
 def _flags(value: int) -> set[str]:
+    """Convert TCP flag bits into readable flag names."""
     names = [
         (0x001, "FIN"),
         (0x002, "SYN"),
@@ -203,12 +216,14 @@ def _flags(value: int) -> set[str]:
 
 
 def _flow_key(packet: dict[str, Any]) -> tuple:
+    """Build a direction-neutral key from packet endpoint pairs."""
     a = (packet["src_ip"], packet["src_port"])
     b = (packet["dst_ip"], packet["dst_port"])
     return tuple(sorted((a, b)))
 
 
 def _parse_http_request(payload: bytes) -> dict[str, str] | None:
+    """Extract method, host, path, and URL from a plaintext HTTP payload."""
     if not payload:
         return None
     first_line = payload.split(b"\r\n", 1)[0]
@@ -227,4 +242,5 @@ def _parse_http_request(payload: bytes) -> dict[str, str] | None:
 
 
 def _iso(ts: float) -> str:
+    """Format a packet timestamp as a UTC ISO-8601 string."""
     return datetime.fromtimestamp(ts, timezone.utc).isoformat()

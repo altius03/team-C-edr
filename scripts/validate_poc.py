@@ -1,3 +1,5 @@
+"""Validate the full local LayerTrace PoC contract and write verification evidence."""
+
 from __future__ import annotations
 
 import compileall
@@ -35,6 +37,7 @@ LATEST_PIPELINE_BUNDLE_PATH = BASE_DIR / "outputs" / "pipeline" / "latest" / "te
 
 
 def main() -> int:
+    """Run all PoC checks and return a process status for automation."""
     checks: list[dict[str, Any]] = []
     checks.append(_check_compile())
     checks.append(_check_unit_tests())
@@ -56,6 +59,7 @@ def main() -> int:
 
 
 def _check_compile() -> dict[str, Any]:
+    """Confirm the source modules still compile before deeper validation runs."""
     ok = compileall.compile_dir(str(BASE_DIR / "src"), quiet=1, force=True)
     return {
         "name": "python_compile",
@@ -65,6 +69,7 @@ def _check_compile() -> dict[str, Any]:
 
 
 def _check_unit_tests() -> dict[str, Any]:
+    """Run the unittest suite so validation captures the same regression gate."""
     completed = subprocess.run(
         [sys.executable, "-m", "unittest", "discover", "-s", "tests"],
         cwd=BASE_DIR,
@@ -82,6 +87,7 @@ def _check_unit_tests() -> dict[str, Any]:
 
 
 def _check_cli_default_run() -> dict[str, Any]:
+    """Exercise the default CLI path that produces latest local PoC artifacts."""
     completed = subprocess.run(
         [sys.executable, "-m", "src.run"],
         cwd=BASE_DIR,
@@ -103,6 +109,7 @@ def _check_cli_default_run() -> dict[str, Any]:
 
 
 def _check_result_contract(result: dict[str, Any]) -> dict[str, Any]:
+    """Check that latest result JSON preserves the expected detection contract."""
     failures: list[str] = []
     if result.get("status") != "success":
         failures.append(f"status is {result.get('status')!r}, expected success")
@@ -168,6 +175,7 @@ def _check_result_contract(result: dict[str, Any]) -> dict[str, Any]:
 
 
 def _check_dashboard_artifacts() -> dict[str, Any]:
+    """Verify the static dashboard files expose required analyst-facing surfaces."""
     failures: list[str] = []
     if not DASHBOARD_INDEX_PATH.exists():
         failures.append(f"missing dashboard index: {DASHBOARD_INDEX_PATH}")
@@ -219,6 +227,7 @@ def _check_dashboard_artifacts() -> dict[str, Any]:
 
 
 def _check_react_project_contract() -> dict[str, Any]:
+    """Verify the React/Vite dashboard project and adapter contract are present."""
     failures: list[str] = []
     for path in (
         PACKAGE_JSON_PATH,
@@ -276,6 +285,7 @@ def _check_react_project_contract() -> dict[str, Any]:
 
 
 def _check_react_build() -> dict[str, Any]:
+    """Build the React dashboard to catch TypeScript or asset regressions."""
     completed = subprocess.run(
         [_npm_command(), "run", "build"],
         cwd=BASE_DIR,
@@ -293,6 +303,7 @@ def _check_react_build() -> dict[str, Any]:
 
 
 def _check_service_architecture() -> dict[str, Any]:
+    """Validate store, queue, worker, and REST pieces as one local service stack."""
     failures: list[str] = []
     try:
         from src.sample_loader import load_events
@@ -336,6 +347,7 @@ def _check_service_architecture() -> dict[str, Any]:
 
 
 def _check_service_http_surface(create_service_server: Any, store: Any, events: list[dict[str, Any]]) -> list[str]:
+    """Exercise service endpoints through HTTP instead of direct function calls."""
     failures: list[str] = []
     server = create_service_server(("127.0.0.1", 0), store)
     port = server.server_address[1]
@@ -379,6 +391,7 @@ def _check_service_http_surface(create_service_server: Any, store: Any, events: 
 
 
 def _get_json(port: int, path: str) -> dict[str, Any]:
+    """Fetch a JSON object from the ephemeral validation service."""
     connection = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
     try:
         connection.request("GET", path)
@@ -395,6 +408,7 @@ def _get_json(port: int, path: str) -> dict[str, Any]:
 
 
 def _post_json(port: int, path: str, payload: dict[str, Any], headers: dict[str, str]) -> dict[str, Any]:
+    """Post JSON to the validation service and require an accepted response."""
     body = json.dumps(payload).encode("utf-8")
     connection = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
     try:
@@ -417,6 +431,7 @@ def _post_json(port: int, path: str, payload: dict[str, Any], headers: dict[str,
 
 
 def _wait_for_task(port: int, task_id: str) -> dict[str, Any]:
+    """Poll the local task endpoint until the queued analysis reaches a terminal state."""
     for _ in range(40):
         payload = _get_json(port, f"/v1/tasks/{task_id}")
         if payload.get("status") in {"succeeded", "failed"}:
@@ -426,6 +441,7 @@ def _wait_for_task(port: int, task_id: str) -> dict[str, Any]:
 
 
 def _check_report_artifacts(result: dict[str, Any]) -> dict[str, Any]:
+    """Verify generated Markdown, HTML, and result report metadata are present."""
     failures: list[str] = []
     if not LATEST_REPORT_MD_PATH.exists():
         failures.append(f"missing report markdown: {LATEST_REPORT_MD_PATH}")
@@ -450,6 +466,7 @@ def _check_report_artifacts(result: dict[str, Any]) -> dict[str, Any]:
 
 
 def _check_pipeline_artifacts(result: dict[str, Any]) -> dict[str, Any]:
+    """Verify compressed telemetry pipeline output is recorded in artifacts and JSON."""
     failures: list[str] = []
     delivery = result.get("pipeline_delivery", {})
     if not delivery:
@@ -469,6 +486,7 @@ def _check_pipeline_artifacts(result: dict[str, Any]) -> dict[str, Any]:
 
 
 def _check_openapi_contract() -> dict[str, Any]:
+    """Generate OpenAPI from FastAPI and check the public REST contract."""
     failures: list[str] = []
     try:
         from src.api_app import create_app
@@ -507,20 +525,24 @@ def _check_openapi_contract() -> dict[str, Any]:
 
 
 def _read_latest_result() -> dict[str, Any]:
+    """Load the latest result artifact when the CLI has produced one."""
     if not LATEST_RESULT_PATH.exists():
         return {}
     return json.loads(LATEST_RESULT_PATH.read_text(encoding="utf-8"))
 
 
 def _npm_command() -> str:
+    """Return the platform-specific npm executable used by validation."""
     return "npm.cmd" if sys.platform == "win32" else "npm"
 
 
 def _combined_output(completed: subprocess.CompletedProcess[str]) -> str:
+    """Merge captured subprocess output into a compact validation detail string."""
     return ((completed.stdout or "") + (completed.stderr or "")).strip()
 
 
 def _build_report(checks: list[dict[str, Any]], result: dict[str, Any]) -> dict[str, Any]:
+    """Assemble the machine-readable verification report from check results."""
     has_fail = any(check["status"] == "fail" for check in checks)
     return {
         "generated_at": datetime.now().isoformat(timespec="seconds"),
@@ -560,6 +582,7 @@ def _build_report(checks: list[dict[str, Any]], result: dict[str, Any]) -> dict[
 
 
 def _write_report(report: dict[str, Any]) -> dict[str, str]:
+    """Persist both timestamped and latest verification reports."""
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     run_dir = VERIFICATION_DIR / "runs" / timestamp
     latest_path = VERIFICATION_DIR / "latest_verification.json"
@@ -574,6 +597,7 @@ def _write_report(report: dict[str, Any]) -> dict[str, str]:
 
 
 def _print_summary(report: dict[str, Any], paths: dict[str, str]) -> None:
+    """Print the validation decision and report paths for CI or terminal users."""
     summary = {
         "decision": report["decision"],
         "checks": {check["name"]: check["status"] for check in report["checks"]},

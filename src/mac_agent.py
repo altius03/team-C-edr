@@ -1,3 +1,5 @@
+"""macOS metadata agent that emits tcpdump-derived or simulated events."""
+
 from __future__ import annotations
 
 import argparse
@@ -18,6 +20,7 @@ TCPDUMP_RE = re.compile(
 
 
 def run_agent(argv: list[str] | None = None) -> int:
+    """Parse CLI options, collect events, and print or post the payload."""
     parser = argparse.ArgumentParser(description="macOS endpoint metadata agent PoC")
     parser.add_argument("--iface", default="en0")
     parser.add_argument("--host-id", default=socket.gethostname() or "mac-endpoint")
@@ -42,6 +45,7 @@ def run_agent(argv: list[str] | None = None) -> int:
 
 
 def capture_tcpdump_events(iface: str, host_id: str, duration: int, bpf: str) -> list[dict[str, Any]]:
+    """Capture tcpdump output for a bounded duration and return event rows."""
     command = ["tcpdump", "-i", iface, "-l", "-n", "-tt", "-q", *bpf.split()]
     started = time.time()
     process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
@@ -65,6 +69,7 @@ def capture_tcpdump_events(iface: str, host_id: str, duration: int, bpf: str) ->
 
 
 def parse_tcpdump_line(line: str, host_id: str, index: int) -> dict[str, Any] | None:
+    """Convert one tcpdump line into a network_connection event when it matches."""
     match = TCPDUMP_RE.search(line.strip())
     if not match:
         return None
@@ -93,6 +98,7 @@ def parse_tcpdump_line(line: str, host_id: str, index: int) -> dict[str, Any] | 
 
 
 def simulate_events(host_id: str) -> list[dict[str, Any]]:
+    """Return deterministic macOS-style events for environments without tcpdump."""
     now = datetime.now(timezone.utc)
     return [
         {
@@ -116,6 +122,7 @@ def simulate_events(host_id: str) -> list[dict[str, Any]]:
 
 
 def _split_addr(value: str) -> tuple[str, int]:
+    """Split tcpdump host.port text into host and integer port."""
     host, _, port = value.rpartition(".")
     try:
         return host, int(port)
@@ -124,6 +131,7 @@ def _split_addr(value: str) -> tuple[str, int]:
 
 
 def _post_json(url: str, payload: dict[str, Any]) -> None:
+    """Post the serialized metadata payload to a collector endpoint."""
     data = json.dumps(payload).encode("utf-8")
     request = urllib.request.Request(url, data=data, method="POST", headers={"Content-Type": "application/json"})
     with urllib.request.urlopen(request, timeout=8) as response:

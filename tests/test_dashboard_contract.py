@@ -1,3 +1,5 @@
+"""Protect the static dashboard and generated OpenAPI contract."""
+
 import sys
 import tempfile
 import unittest
@@ -12,7 +14,10 @@ from src.service_store import ServiceStore
 
 
 class DashboardContractTests(unittest.TestCase):
+    """Check analyst-facing dashboard surfaces and REST schema visibility."""
+
     def test_dashboard_exposes_required_user_surface(self) -> None:
+        """Ensure the static dashboard keeps required topology, charts, and report controls."""
         index = (PROJECT_DIR / "dashboard" / "index.html").read_text(encoding="utf-8")
         app = (PROJECT_DIR / "dashboard" / "app.js").read_text(encoding="utf-8")
 
@@ -45,6 +50,7 @@ class DashboardContractTests(unittest.TestCase):
         self.assertIn("EDR 상태", app)
 
     def test_openapi_contract_is_generated_by_fastapi(self) -> None:
+        """Ensure FastAPI produces the documented REST paths and deployment terms."""
         with tempfile.TemporaryDirectory() as temp_dir:
             store = ServiceStore(Path(temp_dir) / "layertrace.sqlite3")
             openapi = create_app(store).openapi()

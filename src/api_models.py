@@ -1,3 +1,5 @@
+"""Define Pydantic request and response models for the REST API contract."""
+
 from __future__ import annotations
 
 from enum import StrEnum
@@ -11,6 +13,8 @@ JsonDocument: TypeAlias = dict[str, JsonValue]
 
 
 class ApiSettings(BaseModel):
+    """Immutable runtime settings for auth, CORS, and queue selection."""
+
     model_config = ConfigDict(frozen=True)
 
     require_api_token: bool = True
@@ -20,6 +24,8 @@ class ApiSettings(BaseModel):
 
 
 class ErrorResponse(BaseModel):
+    """Stable error envelope returned by REST handlers."""
+
     model_config = ConfigDict(frozen=True)
 
     error: str
@@ -27,6 +33,8 @@ class ErrorResponse(BaseModel):
 
 
 class TenantHeaders(BaseModel):
+    """Required tenant and agent identity carried in ingestion headers."""
+
     model_config = ConfigDict(frozen=True)
 
     customer_id: str
@@ -36,6 +44,8 @@ class TenantHeaders(BaseModel):
 
 
 class HealthResponse(BaseModel):
+    """Health payload that exposes active transport, storage, and queue mode."""
+
     model_config = ConfigDict(frozen=True)
 
     status: str = "ok"
@@ -46,12 +56,16 @@ class HealthResponse(BaseModel):
 
 
 class TelemetryBatchRequest(BaseModel):
+    """Incoming telemetry batch accepted by the ingestion endpoint."""
+
     model_config = ConfigDict(frozen=True)
 
     events: list[JsonValue] = Field(default_factory=list)
 
 
 class IngestResponse(BaseModel):
+    """Acknowledgement returned after telemetry is accepted into the queue."""
+
     model_config = ConfigDict(frozen=True)
 
     status: str
@@ -62,6 +76,8 @@ class IngestResponse(BaseModel):
 
 
 class TaskStatusResponse(BaseModel):
+    """Public task status view including optional result or error payload."""
+
     model_config = ConfigDict(frozen=True)
 
     task_id: str
@@ -72,6 +88,8 @@ class TaskStatusResponse(BaseModel):
 
 
 class DashboardResult(BaseModel):
+    """Dashboard response model allowing stored analysis fields to pass through."""
+
     model_config = ConfigDict(extra="allow", frozen=True)
 
     status: str
@@ -79,12 +97,16 @@ class DashboardResult(BaseModel):
 
 
 class IncidentListResponse(BaseModel):
+    """Incident collection returned by the incident listing endpoint."""
+
     model_config = ConfigDict(frozen=True)
 
     incidents: list[JsonDocument]
 
 
 class ReportLatestResponse(BaseModel):
+    """Latest report file metadata projected from the persisted run payload."""
+
     model_config = ConfigDict(frozen=True)
 
     status: str | None = None
@@ -96,6 +118,8 @@ class ReportLatestResponse(BaseModel):
 
 
 class Severity(StrEnum):
+    """Incident severities accepted by the REST incident filter."""
+
     CRITICAL = "critical"
     WARNING = "warning"
     SUSPICIOUS = "suspicious"

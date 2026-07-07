@@ -1,3 +1,5 @@
+"""Protect advanced LayerTrace telemetry adapters and enrichment outputs."""
+
 import json
 import struct
 import sys
@@ -18,7 +20,10 @@ from src.response_engine import build_response_plan
 
 
 class AdvancedFeatureTests(unittest.TestCase):
+    """Cover PCAP, decrypted L7, response, AI, and pipeline integrations."""
+
     def test_pcap_flow_analyzer_extracts_flow_and_http_request(self) -> None:
+        """Ensure a minimal PCAP produces both flow and HTTP request telemetry."""
         with tempfile.TemporaryDirectory() as temp_dir:
             pcap_path = Path(temp_dir) / "http.pcap"
             pcap_path.write_bytes(_pcap_with_http_get())
@@ -32,6 +37,7 @@ class AdvancedFeatureTests(unittest.TestCase):
         self.assertEqual(http["dst_domain"], "malware-drop.example")
 
     def test_l7_inspector_and_new_rules_generate_alerts(self) -> None:
+        """Ensure decrypted L7 records feed newer detection rules without leaking content."""
         with tempfile.TemporaryDirectory() as temp_dir:
             path = Path(temp_dir) / "l7.json"
             path.write_text(
@@ -75,6 +81,7 @@ class AdvancedFeatureTests(unittest.TestCase):
         self.assertNotIn("must be removed", serialized)
 
     def test_response_ai_and_pipeline_outputs_are_created(self) -> None:
+        """Ensure analysis output can be enriched and packaged for downstream delivery."""
         events, meta = events_from_l7_file(PROJECT_DIR / "samples" / "decrypted_l7_records.json")
         result = analyze_events(events, input_meta=meta)
         result["response_plan"] = build_response_plan(result)
@@ -100,6 +107,7 @@ class AdvancedFeatureTests(unittest.TestCase):
 
 
 def _pcap_with_http_get() -> bytes:
+    """Build a tiny PCAP fixture containing one HTTP GET request."""
     payload = b"GET /payload/invoice.exe HTTP/1.1\r\nHost: malware-drop.example\r\n\r\n"
     frame = _ethernet_ipv4_tcp_frame(payload)
     global_header = b"\xd4\xc3\xb2\xa1" + struct.pack("<HHIIII", 2, 4, 0, 0, 65535, 1)
@@ -108,6 +116,7 @@ def _pcap_with_http_get() -> bytes:
 
 
 def _ethernet_ipv4_tcp_frame(payload: bytes) -> bytes:
+    """Wrap payload bytes in enough Ethernet/IP/TCP framing for parser coverage."""
     ethernet = b"\x00\x11\x22\x33\x44\x55" + b"\x66\x77\x88\x99\xaa\xbb" + struct.pack("!H", 0x0800)
     src_ip = b"\x0a\x00\x00\x01"
     dst_ip = b"\xcb\x00\x71\x4d"

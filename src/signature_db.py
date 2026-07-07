@@ -1,3 +1,5 @@
+"""Load malicious indicator and policy signatures for detection rules."""
+
 from __future__ import annotations
 
 import json
@@ -13,6 +15,8 @@ from .config import (
 
 
 def load_signature_db(path: Path | None = None) -> dict[str, Any]:
+    """Return normalized signatures from disk, falling back to built-ins."""
+
     signature_path = path or SIGNATURE_DB_PATH
     payload: dict[str, Any] = {}
     if signature_path.exists():
@@ -30,4 +34,6 @@ def load_signature_db(path: Path | None = None) -> dict[str, Any]:
 
 
 def _lower_set(values: Any) -> set[str]:
+    """Convert optional iterable values into lowercase string indicators."""
+
     return {str(value).lower() for value in values or []}

@@ -1,3 +1,5 @@
+"""Persist runs, incidents, events, DLQ rows, outbox rows, and task state."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -16,11 +18,17 @@ from .service_store_rows import OutboxRecord, alert_rows, dlq_rows, event_rows, 
 
 
 class UnsupportedTableError(ValueError):
+    """Raised when a row-count helper is called with an unknown table name."""
+
     def __init__(self, table: str) -> None:
+        """Build an error message naming the unsupported table."""
+
         super().__init__(f"unsupported table: {table}")
 
 
 class TaskStatus(StrEnum):
+    """Durable task states stored in the task table."""
+
     PENDING = "pending"
     RUNNING = "running"
     SUCCEEDED = "succeeded"
@@ -29,6 +37,8 @@ class TaskStatus(StrEnum):
 
 @dataclass(frozen=True, slots=True)
 class QueuedTask:
+    """Typed task record exchanged between the store and task runners."""
+
     task_id: str
     task_type: str
     status: TaskStatus
@@ -38,7 +48,11 @@ class QueuedTask:
 
 
 class ServiceStore:
+    """Persist service data through SQLAlchemy while hiding backend details."""
+
     def __init__(self, db_path: Path | None = None, *, database_url: str | None = None) -> None:
+        """Configure SQLite by path or use the provided database URL."""
+
         if db_path is not None and database_url is not None:
             raise ValueError("db_path and database_url cannot both be set")
         self.database_url = database_url or (_sqlite_url(db_path) if db_path is not None else DEFAULT_DATABASE_URL)
@@ -48,6 +62,8 @@ class ServiceStore:
 
     @property
     def storage_label(self) -> str:
+        """Return a compact label describing the configured database backend."""
+
         if self.database_url.startswith("sqlite"):
             return "sqlite"
         if self.database_url.startswith("postgresql"):
@@ -55,11 +71,15 @@ class ServiceStore:
         return "database"
 
     def initialize(self) -> None:
+        """Create database tables and parent directories needed by the store."""
+
         if self._sqlite_path is not None:
             self._sqlite_path.parent.mkdir(parents=True, exist_ok=True)
         Base.metadata.create_all(self._get_engine())
 
     def close(self) -> None:
+        """Dispose the cached SQLAlchemy engine and session factory."""
+
         if self._engine is None:
             return
         self._engine.dispose()
@@ -67,6 +87,8 @@ class ServiceStore:
         self._session_factory = None
 
     def save_run_result(self, payload: JsonObject) -> str:
+        """Persist a completed analysis run plus its derived query rows."""
+
         run_id = new_id("run")
         with self._session() as session:
             with session.begin():
@@ -100,6 +122,8 @@ class ServiceStore:
         return run_id
 
     def get_latest_run(self) -> JsonObject | None:
+        """Return the most recent stored run payload, if any exists."""
+
         with self._session() as session:
             payload = session.scalars(select(RunRow.payload).order_by(desc(RunRow.generated_at), desc(RunRow.run_id)).limit(1)).first()
         if payload is None:
@@ -107,6 +131,8 @@ class ServiceStore:
         return load_json_object(payload)
 
     def list_incidents(self, severity: str | None = None, limit: int = 50) -> list[JsonObject]:
+        """Return incident payloads ordered by risk with an optional severity filter."""
+
         statement = select(IncidentRow.payload).order_by(desc(IncidentRow.risk_score)).limit(limit)
         if severity:
             statement = statement.where(IncidentRow.severity == severity)
@@ -115,18 +141,28 @@ class ServiceStore:
         return [load_json_object(row) for row in rows]
 
     def count_events(self) -> int:
+        """Count normalized telemetry event rows."""
+
         return self._count_rows("events")
 
     def count_alerts(self) -> int:
+        """Count normalized alert rows."""
+
         return self._count_rows("alerts")
 
     def count_dlq_events(self) -> int:
+        """Count dead-letter telemetry rows."""
+
         return self._count_rows("dlq_events")
 
     def count_outbox_events(self) -> int:
+        """Count pending or recorded outbox rows."""
+
         return self._count_rows("outbox_events")
 
     def enqueue_task(self, task_type: str, payload: JsonObject) -> QueuedTask:
+        """Persist a pending task and emit the matching outbox event."""
+
         task = QueuedTask(
             task_id=new_id("task"),
             task_type=task_type,
@@ -163,6 +199,8 @@ class ServiceStore:
         return task
 
     def claim_next_task(self) -> QueuedTask | None:
+        """Atomically move the oldest pending task to running state."""
+
         with self._session() as session:
             with session.begin():
                 row = session.scalars(
@@ -176,6 +214,8 @@ class ServiceStore:
         return task
 
     def complete_task(self, task_id: str, status: TaskStatus, result: JsonObject) -> None:
+        """Store task completion state, result JSON, and an outbox event."""
+
         with self._session() as session:
             with session.begin():
                 row = _require_task_row(session, task_id)
@@ -195,6 +235,8 @@ class ServiceStore:
                 )
 
     def fail_task(self, task_id: str, error: str) -> None:
+        """Store task failure details and emit a failure outbox event."""
+
         with self._session() as session:
             with session.begin():
                 row = _require_task_row(session, task_id)
@@ -214,6 +256,8 @@ class ServiceStore:
                 )
 
     def get_task(self, task_id: str) -> QueuedTask:
+        """Load one queued task by identifier or raise when it is absent."""
+
         with self._session() as session:
             row = session.get(TaskRow, task_id)
             if row is None:
@@ -221,6 +265,8 @@ class ServiceStore:
             return _queued_task(row, TaskStatus(row.status))
 
     def _count_rows(self, table: str) -> int:
+        """Count rows for the supported persistence tables."""
+
         with self._session() as session:
             match table:
                 case "runs":
@@ -242,6 +288,8 @@ class ServiceStore:
         return int(count or 0)
 
     def _get_engine(self) -> Engine:
+        """Create or reuse the SQLAlchemy engine with backend-specific options."""
+
         if self._engine is None:
             engine_kwargs: dict[str, object] = {"future": True, "pool_pre_ping": True}
             if self.storage_label == "sqlite":
@@ -251,12 +299,16 @@ class ServiceStore:
         return self._engine
 
     def _session(self) -> Session:
+        """Return a new SQLAlchemy session from the cached factory."""
+
         if self._session_factory is None:
             self._session_factory = sessionmaker(self._get_engine(), expire_on_commit=False, future=True)
         return self._session_factory()
 
 
 def _require_task_row(session: Session, task_id: str) -> TaskRow:
+    """Return a task row from an active session or raise KeyError."""
+
     row = session.get(TaskRow, task_id)
     if row is None:
         raise KeyError(task_id)
@@ -264,6 +316,8 @@ def _require_task_row(session: Session, task_id: str) -> TaskRow:
 
 
 def _queued_task(row: TaskRow, status: TaskStatus) -> QueuedTask:
+    """Map a persisted task row into the typed queue contract."""
+
     return QueuedTask(
         task_id=row.task_id,
         task_type=row.task_type,
@@ -275,4 +329,6 @@ def _queued_task(row: TaskRow, status: TaskStatus) -> QueuedTask:
 
 
 def _sqlite_url(path: Path) -> str:
+    """Build a SQLAlchemy SQLite URL from a filesystem path."""
+
     return f"sqlite:///{path.resolve().as_posix()}"

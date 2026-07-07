@@ -1,3 +1,5 @@
+"""Run the LayerTrace task worker that drains persisted analysis jobs."""
+
 from __future__ import annotations
 
 import argparse
@@ -17,6 +19,7 @@ from src.task_queue import TaskWorker
 
 
 def main() -> int:
+    """Drain pending tasks once or keep polling the configured service store."""
     logging.basicConfig(level=os.environ.get("LAYERTRACE_LOG_LEVEL", "INFO"), format="%(asctime)s %(levelname)s %(name)s %(message)s")
     parser = argparse.ArgumentParser(description="Run the LayerTrace task worker.")
     parser.add_argument("--database-url", default=os.environ.get("DATABASE_URL") or os.environ.get("LAYERTRACE_DATABASE_URL") or DEFAULT_DATABASE_URL)

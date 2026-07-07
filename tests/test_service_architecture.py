@@ -1,3 +1,5 @@
+"""Protect the service-store, queue, worker, and REST architecture contract."""
+
 import http.client
 import json
 import sys
@@ -20,7 +22,10 @@ from src.task_queue import DatabaseTaskQueue, TaskWorker
 
 
 class ServiceArchitectureTests(unittest.TestCase):
+    """Exercise persistence and queue behavior through local service components."""
+
     def test_service_store_persists_run_incidents_and_queue_state(self) -> None:
+        """Ensure a run persists events, alerts, incidents, DLQ rows, and task state."""
         with tempfile.TemporaryDirectory() as temp_dir:
             store = ServiceStore(Path(temp_dir) / "layertrace.sqlite3")
             store.initialize()
@@ -45,6 +50,7 @@ class ServiceArchitectureTests(unittest.TestCase):
             self.assertEqual(store.get_task(task.task_id).status, TaskStatus.SUCCEEDED)
 
     def test_service_api_exposes_health_dashboard_and_incidents(self) -> None:
+        """Ensure the local REST API exposes dashboard, incident, report, and task data."""
         with tempfile.TemporaryDirectory() as temp_dir:
             store = ServiceStore(Path(temp_dir) / "layertrace.sqlite3")
             store.initialize()
@@ -92,6 +98,7 @@ class ServiceArchitectureTests(unittest.TestCase):
             self.assertEqual(task["status"], "succeeded")
 
     def test_external_worker_queue_drains_pending_analysis_task(self) -> None:
+        """Ensure external worker mode leaves queued work for TaskWorker to drain."""
         with tempfile.TemporaryDirectory() as temp_dir:
             store = ServiceStore(Path(temp_dir) / "layertrace.sqlite3")
             store.initialize()
@@ -136,6 +143,7 @@ class ServiceArchitectureTests(unittest.TestCase):
 
 
 def _get_json(port: int, path: str) -> dict[str, object]:
+    """Fetch a JSON object from the temporary service architecture server."""
     connection = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
     try:
         connection.request("GET", path)
@@ -152,6 +160,7 @@ def _get_json(port: int, path: str) -> dict[str, object]:
 
 
 def _post_json(port: int, path: str, payload: dict[str, object], headers: dict[str, str]) -> dict[str, object]:
+    """Post JSON to the temporary server and require a queued-task response."""
     body = json.dumps(payload).encode("utf-8")
     connection = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
     try:
@@ -174,6 +183,7 @@ def _post_json(port: int, path: str, payload: dict[str, object], headers: dict[s
 
 
 def _wait_for_task(port: int, task_id: str) -> dict[str, object]:
+    """Poll the local task endpoint until the task reaches a final state."""
     for _ in range(40):
         payload = _get_json(port, f"/v1/tasks/{task_id}")
         if payload.get("status") in {"succeeded", "failed"}:

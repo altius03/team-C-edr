@@ -1,3 +1,5 @@
+"""Package detector output into compressed telemetry bundles for handoff."""
+
 from __future__ import annotations
 
 import gzip
@@ -20,6 +22,8 @@ from .config import (
 
 
 def build_pipeline_bundle(payload: dict[str, Any], *, ship_url: str | None = None) -> dict[str, Any]:
+    """Write latest and run-scoped gzip bundles, optionally shipping them."""
+
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     run_dir = PIPELINE_RUNS_DIR / timestamp
     latest_dir = LATEST_PIPELINE_DIR
@@ -52,6 +56,8 @@ def build_pipeline_bundle(payload: dict[str, Any], *, ship_url: str | None = Non
 
 
 def _pipeline_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    """Select the review-safe subset of detector output for the bundle."""
+
     # The shippable bundle intentionally excludes raw events and DLQ payloads;
     # reviewers can audit detections without publishing high-volume telemetry.
     return {
@@ -70,6 +76,8 @@ def _pipeline_payload(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def _ship_bundle(ship_url: str, compressed: bytes) -> dict[str, Any]:
+    """POST a gzip telemetry bundle and return delivery status metadata."""
+
     request = urllib.request.Request(
         ship_url,
         data=compressed,

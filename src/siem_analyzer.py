@@ -1,3 +1,5 @@
+"""Create SIEM-style correlation views from endpoint detection output."""
+
 from __future__ import annotations
 
 from collections import Counter, defaultdict
@@ -12,10 +14,14 @@ from .config import (
 )
 
 
+# Fixed layers keep graph rendering stable across runs and separate endpoint,
+# tenant-boundary, and external-destination concepts.
 TOPOLOGY_LAYERS = ["Endpoint", "Internal Zone", "External Destination"]
 
 
 def display_host(host_id: str | None) -> str:
+    """Return a dashboard-safe host label for a host identifier."""
+
     if not host_id:
         return "-"
     return HOST_DISPLAY_NAMES.get(host_id, host_id)
@@ -27,6 +33,8 @@ def build_siem_analysis(
     incidents: list[dict[str, Any]],
     endpoint_risk: list[dict[str, Any]],
 ) -> dict[str, Any]:
+    """Return query findings, topology, timeline, and telemetry metadata."""
+
     return {
         "query_findings": _query_findings(alerts),
         "egress_topology": _egress_topology(events, alerts, endpoint_risk),
@@ -54,6 +62,8 @@ def build_siem_analysis(
 
 
 def _query_findings(alerts: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Group alerts into SIEM query rows by host and rule."""
+
     grouped: dict[tuple[str, str], list[dict[str, Any]]] = defaultdict(list)
     for alert in alerts:
         grouped[(alert.get("host_id", "-"), alert.get("rule_id", "-"))].append(alert)
@@ -87,6 +97,8 @@ def _egress_topology(
     alerts: list[dict[str, Any]],
     endpoint_risk: list[dict[str, Any]],
 ) -> dict[str, Any]:
+    """Build endpoint-to-destination graph data with alert-aware states."""
+
     # The dashboard renders this as Endpoint fleet -> tenant boundary ->
     # external destinations, so the topology keeps nodes and edges separate.
     alert_event_ids = {event_id for alert in alerts for event_id in alert.get("event_ids", [])}
@@ -178,6 +190,8 @@ def _correlation_timeline(
     alerts: list[dict[str, Any]],
     incidents: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
+    """Return incident stages or alert fallbacks in chronological order."""
+
     event_by_id = {event["event_id"]: event for event in events}
     rows: list[dict[str, Any]] = []
     for incident in incidents:
@@ -212,6 +226,8 @@ def _correlation_timeline(
 
 
 def _destination_intelligence(events: list[dict[str, Any]], alerts: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Aggregate destination counts, bytes, and alert state for analysts."""
+
     alert_event_ids = {event_id for alert in alerts for event_id in alert.get("event_ids", [])}
     counts: Counter[str] = Counter()
     alert_counts: Counter[str] = Counter()
@@ -237,6 +253,8 @@ def _destination_intelligence(events: list[dict[str, Any]], alerts: list[dict[st
 
 
 def _destination(event: dict[str, Any]) -> str:
+    """Extract the best available external destination from an event."""
+
     return str(
         event.get("domain")
         or event.get("source_domain")
@@ -247,6 +265,8 @@ def _destination(event: dict[str, Any]) -> str:
 
 
 def _node_state(risk_score: int, alert_count: int) -> str:
+    """Map risk and alert counts to topology node state."""
+
     if risk_score >= 80:
         return "red"
     if alert_count:

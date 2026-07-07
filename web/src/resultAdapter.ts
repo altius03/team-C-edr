@@ -1,3 +1,9 @@
+/**
+ * Adapter boundary for dashboard data.
+ *
+ * Raw CLI/API payloads can omit fields or use snake_case names. This module maps them
+ * into a stable camelCase model before React components read any dashboard data.
+ */
 export type Severity = "critical" | "warning" | "suspicious" | "info";
 export type EdrState = "red" | "yellow" | "green" | "unknown";
 
@@ -201,6 +207,7 @@ export type DashboardResult = {
   readonly source: string;
 };
 
+// Known endpoints keep the demo topology visible when a run has no detection rows.
 const KNOWN_ENDPOINTS: readonly Pick<EndpointRisk, "host" | "hostId">[] = [
   { host: "이주호-Desktop", hostId: "endpoint-04" }
 ] as const;
@@ -211,6 +218,7 @@ declare global {
   }
 }
 
+// Prefer the live API, then the public JSON artifact, then the embedded static result.
 export function readDashboardResult(): DashboardResult {
   return adaptResult(window.SIEM_RESULT);
 }
@@ -248,10 +256,12 @@ async function fetchDashboardApi(signal: AbortSignal): Promise<DashboardResult |
   }
 }
 
+// Resolves the dashboard API base URL from Vite environment config.
 function apiBaseUrl(): string {
   return String(import.meta.env.VITE_LAYERTRACE_API_BASE_URL ?? import.meta.env.VITE_API_BASE_URL ?? "").replace(/\/$/, "");
 }
 
+/** Convert an unknown result payload into the dashboard's normalized view model. */
 export function adaptResult(raw: unknown): DashboardResult {
   const result = recordOrEmpty(raw);
   const summary = recordOrEmpty(result.summary);
@@ -350,6 +360,7 @@ export function adaptResult(raw: unknown): DashboardResult {
   };
 }
 
+// Row mappers translate source payload fields into presentation-ready dashboard rows.
 function toAlert(item: Readonly<Record<string, unknown>>): Alert {
   const hostId = text(item.host_id, "unknown");
   return {
@@ -366,6 +377,7 @@ function toAlert(item: Readonly<Record<string, unknown>>): Alert {
   };
 }
 
+// Converts one raw endpoint-risk object into a dashboard row.
 function toEndpointRisk(item: Readonly<Record<string, unknown>>): EndpointRisk {
   const hostId = text(item.host_id, "unknown");
   return {
@@ -380,6 +392,7 @@ function toEndpointRisk(item: Readonly<Record<string, unknown>>): EndpointRisk {
   };
 }
 
+// Converts one raw topology node into the graph node contract.
 function toTopologyNode(item: Readonly<Record<string, unknown>>): TopologyNode {
   const id = text(item.id, "unknown");
   const rawLabel = text(item.label, id);
@@ -394,6 +407,7 @@ function toTopologyNode(item: Readonly<Record<string, unknown>>): TopologyNode {
   };
 }
 
+// Converts one raw topology edge into the graph edge contract.
 function toTopologyEdge(item: Readonly<Record<string, unknown>>): TopologyEdge {
   const source = text(item.source, "unknown");
   return {
@@ -408,6 +422,7 @@ function toTopologyEdge(item: Readonly<Record<string, unknown>>): TopologyEdge {
   };
 }
 
+// Converts one raw telemetry event into a table row.
 function toEventRow(item: Readonly<Record<string, unknown>>): EventRow {
   const hostId = text(item.host_id, "unknown");
   return {
@@ -422,6 +437,7 @@ function toEventRow(item: Readonly<Record<string, unknown>>): EventRow {
   };
 }
 
+// Converts one raw DLQ entry into a monitor row.
 function toDlqEvent(item: Readonly<Record<string, unknown>>): DlqEvent {
   return {
     eventId: text(item.event_id, `index-${numberValue(item.index)}`),
@@ -431,6 +447,7 @@ function toDlqEvent(item: Readonly<Record<string, unknown>>): DlqEvent {
   };
 }
 
+// Converts one raw process-tree entry into a process panel row.
 function toProcessTreeRow(item: Readonly<Record<string, unknown>>): ProcessTreeRow {
   const hostId = text(item.host_id, "unknown");
   return {
@@ -445,6 +462,7 @@ function toProcessTreeRow(item: Readonly<Record<string, unknown>>): ProcessTreeR
   };
 }
 
+// Converts one raw incident object into the triage queue contract.
 function toIncident(item: Readonly<Record<string, unknown>>): Incident {
   const hostId = text(item.host_id, "unknown");
   return {
@@ -462,6 +480,7 @@ function toIncident(item: Readonly<Record<string, unknown>>): Incident {
   };
 }
 
+// Converts one raw timeline entry into the correlation timeline contract.
 function toTimelineItem(item: Readonly<Record<string, unknown>>): TimelineItem {
   const hostId = text(item.host_id, "unknown");
   return {
@@ -473,6 +492,7 @@ function toTimelineItem(item: Readonly<Record<string, unknown>>): TimelineItem {
   };
 }
 
+// Converts one raw SIEM finding into a reportable query row.
 function toQueryFinding(item: Readonly<Record<string, unknown>>): QueryFinding {
   const hostId = text(item.host_id, "unknown");
   return {
@@ -489,6 +509,7 @@ function toQueryFinding(item: Readonly<Record<string, unknown>>): QueryFinding {
   };
 }
 
+// Converts one raw response action into a dashboard action row.
 function toResponseAction(item: Readonly<Record<string, unknown>>): ResponseAction {
   const hostId = text(item.host_id, "unknown");
   return {
@@ -501,6 +522,7 @@ function toResponseAction(item: Readonly<Record<string, unknown>>): ResponseActi
   };
 }
 
+// Maps arbitrary severity text into the supported severity union.
 function normalizeSeverity(value: string): Severity {
   const normalized = value.toLowerCase();
   switch (normalized) {
@@ -514,6 +536,7 @@ function normalizeSeverity(value: string): Severity {
   }
 }
 
+// Maps arbitrary EDR state text into the supported dashboard state.
 function normalizeEdrState(value: string): EdrState {
   const normalized = value.toLowerCase();
   switch (normalized) {
@@ -526,12 +549,14 @@ function normalizeEdrState(value: string): EdrState {
   }
 }
 
+// Normalizes topology state text for CSS classes.
 function normalizeTopologyState(value: string): string {
   const normalized = value.toLowerCase().replace(/_/g, "-");
   if (normalized === "red") return "alert";
   return normalized;
 }
 
+// Builds the source label shown in dashboard metadata.
 function sourceLabel(input: Readonly<Record<string, unknown>>): string {
   const source = text(input.source, "latest CLI run");
   if (source === "event_file") return `${numberValue(input.raw_event_count)} events / offline sample`;
@@ -541,6 +566,7 @@ function sourceLabel(input: Readonly<Record<string, unknown>>): string {
   return source;
 }
 
+// Demo-only completeness guards add known assets that may not appear in sparse runs.
 function includeKnownEndpointRisk(rows: readonly EndpointRisk[]): readonly EndpointRisk[] {
   const knownHostIds = new Set(rows.map((row) => row.hostId));
   const missingRows = KNOWN_ENDPOINTS
@@ -558,6 +584,7 @@ function includeKnownEndpointRisk(rows: readonly EndpointRisk[]): readonly Endpo
   return [...rows, ...missingRows];
 }
 
+// Adds known sample hosts to topology data when the API omits them.
 function includeKnownTopologyNodes(nodes: readonly TopologyNode[]): readonly TopologyNode[] {
   const knownNodeIds = new Set(nodes.map((node) => node.id));
   const missingNodes = KNOWN_ENDPOINTS
@@ -573,30 +600,37 @@ function includeKnownTopologyNodes(nodes: readonly TopologyNode[]): readonly Top
   return [...nodes, ...missingNodes];
 }
 
+// Primitive readers keep missing or malformed source fields from leaking past the adapter.
 function recordOrEmpty(value: unknown): Readonly<Record<string, unknown>> {
   return isRecord(value) ? value : {};
 }
 
+// Checks whether an unknown value is a non-array object.
 function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+// Narrows unknown JSON arrays to object arrays.
 function arrayOfRecords(value: unknown): readonly Readonly<Record<string, unknown>>[] {
   return Array.isArray(value) ? value.filter(isRecord) : [];
 }
 
+// Narrows unknown JSON arrays to text arrays.
 function arrayOfText(value: unknown): readonly string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
 }
 
+// Reads a string value with a fallback.
 function text(value: unknown, fallback: string): string {
   return typeof value === "string" && value.length > 0 ? value : fallback;
 }
 
+// Reads a numeric value with a safe zero fallback.
 function numberValue(value: unknown): number {
   return typeof value === "number" && Number.isFinite(value) ? value : 0;
 }
 
+// Host labels prefer readable source names and fall back to stable demo labels by id.
 function hostLabel(hostId: string, displayName: string): string {
   const fallback: Readonly<Record<string, string>> = {
     "endpoint-01": "황건하 PC",
@@ -610,6 +644,7 @@ function hostLabel(hostId: string, displayName: string): string {
   return fallback[hostId.toLowerCase()] ?? hostId;
 }
 
+// Rejects labels that are empty or mostly placeholder characters.
 function isReadableLabel(value: string): boolean {
   if (!value) return false;
   if (value.includes("\uFFFD")) return false;

@@ -7,6 +7,7 @@
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
+    <!-- Static dashboard shell reads the latest generated result without requiring the REST API. -->
     <div class="app-shell">
       <aside class="sidebar" aria-label="Dashboard navigation">
         <div class="brand">
@@ -38,6 +39,7 @@
       </aside>
 
       <div class="page">
+        <!-- Run metadata and report actions give reviewers the current analysis context first. -->
         <header class="topbar">
           <div>
             <p class="eyebrow">LayerTrace EDR/SIEM PoC</p>
@@ -56,6 +58,7 @@
           </div>
         </header>
 
+        <!-- These controls drive every chart, table, topology, and evidence section below. -->
         <section class="toolbar" aria-label="dashboard filters">
           <label class="field">
             <span>시간 범위</span>

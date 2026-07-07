@@ -1,4 +1,5 @@
 :root {
+  /* Design tokens keep the React dashboard visually consistent across every panel. */
   color-scheme: dark;
   --bg: #101215;
   --shell: #0d0f12;
@@ -23,6 +24,7 @@
   box-sizing: border-box;
 }
 
+/* Base page rules set the operational console frame before component-specific styles. */
 html {
   scroll-behavior: smooth;
 }
@@ -44,12 +46,14 @@ button {
   cursor: pointer;
 }
 
+/* The main shell is always navigation plus a dense investigation workspace. */
 .app-shell {
   display: grid;
   grid-template-columns: 232px minmax(0, 1fr);
   min-height: 100dvh;
 }
 
+/* Sidebar navigation stays visible while reviewers move through alert and report sections. */
 .sidebar {
   position: sticky;
   top: 0;
@@ -151,6 +155,7 @@ code {
   gap: 12px;
 }
 
+/* Topbar, filters, and KPI panels form the first scan path for a review session. */
 .topbar {
   position: sticky;
   top: 0;

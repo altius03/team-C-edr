@@ -1,3 +1,5 @@
+"""Build Markdown and HTML report artifacts from the analysis result payload."""
+
 from __future__ import annotations
 
 import html
@@ -9,6 +11,7 @@ from .siem_analyzer import display_host
 
 
 def write_report_artifacts(payload: dict[str, Any], latest_dir: Path, run_dir: Path) -> dict[str, Path]:
+    """Write latest and run-scoped report files and return their paths."""
     latest_dir.mkdir(parents=True, exist_ok=True)
     run_dir.mkdir(parents=True, exist_ok=True)
 
@@ -34,6 +37,7 @@ def write_report_artifacts(payload: dict[str, Any], latest_dir: Path, run_dir: P
 
 
 def build_markdown_report(payload: dict[str, Any]) -> str:
+    """Render the result payload into a Markdown report for analysts."""
     summary = payload.get("summary", {})
     input_meta = payload.get("input", {})
     endpoint_rows = payload.get("endpoint_risk", [])
@@ -305,6 +309,7 @@ def build_markdown_report(payload: dict[str, Any]) -> str:
 
 
 def build_html_report(payload: dict[str, Any], markdown: str) -> str:
+    """Wrap rendered Markdown content in the standalone HTML report shell."""
     summary = payload.get("summary", {})
     highest = summary.get("highest_risk_score", 0)
     severity_class = "critical" if highest >= 80 else "warning" if highest >= 60 else "normal"
@@ -398,11 +403,13 @@ def build_html_report(payload: dict[str, Any], markdown: str) -> str:
 
 
 def _host_label(row: dict[str, Any]) -> str:
+    """Return the display host label used across report tables."""
     host_id = row.get("host_id")
     return str(row.get("host_display_name") or display_host(host_id))
 
 
 def _topology_sentence(siem_analysis: dict[str, Any]) -> str:
+    """Summarize endpoint-to-destination topology counts in prose."""
     topology = siem_analysis.get("egress_topology", {})
     summary = topology.get("summary", {})
     endpoint_count = summary.get("endpoint_count", 0)
@@ -416,6 +423,7 @@ def _topology_sentence(siem_analysis: dict[str, Any]) -> str:
 
 
 def _executive_sentence(payload: dict[str, Any]) -> str:
+    """Choose the report lead sentence from decision and risk summary fields."""
     summary = payload.get("summary", {})
     decision = payload.get("decision", "unknown")
     highest = int(summary.get("highest_risk_score", 0) or 0)
@@ -427,6 +435,7 @@ def _executive_sentence(payload: dict[str, Any]) -> str:
 
 
 def _markdown_to_report_html(markdown: str) -> str:
+    """Convert the limited Markdown report syntax into escaped HTML."""
     lines = markdown.splitlines()
     html_lines: list[str] = []
     in_ul = False
@@ -434,6 +443,8 @@ def _markdown_to_report_html(markdown: str) -> str:
     table_header_done = False
 
     for line in lines:
+        # The report generator only emits headings, tables, bullets, paragraphs,
+        # and inline code, so this small converter keeps the HTML artifact local.
         if line.startswith("# "):
             _close_lists(html_lines, in_ul, in_table)
             in_ul = False
@@ -497,6 +508,7 @@ def _markdown_to_report_html(markdown: str) -> str:
 
 
 def _close_lists(html_lines: list[str], in_ul: bool, in_table: bool) -> None:
+    """Close any currently open list or table tags."""
     if in_ul:
         html_lines.append("</ul>")
     if in_table:
@@ -504,6 +516,7 @@ def _close_lists(html_lines: list[str], in_ul: bool, in_table: bool) -> None:
 
 
 def _inline_html(value: str) -> str:
+    """Escape text and render backtick-delimited inline code spans."""
     escaped = html.escape(value)
     parts = escaped.split("`")
     if len(parts) == 1:

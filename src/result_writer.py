@@ -1,3 +1,5 @@
+"""Persist analysis results to JSON, dashboard data, and report artifacts."""
+
 from __future__ import annotations
 
 import json
@@ -20,12 +22,15 @@ from .report_builder import write_report_artifacts
 
 
 def write_result(payload: dict[str, Any]) -> dict[str, Path]:
+    """Write the result payload fan-out and return every generated path."""
     run_dir = _new_run_dir()
     latest_path = LATEST_OUTPUT_DIR / "result.json"
     run_path = run_dir / "result.json"
     report_run_dir = REPORT_RUNS_DIR / run_dir.name
 
     payload = dict(payload)
+    # Result metadata is injected before writing any artifact so JSON,
+    # dashboard data, and reports all point to the same generated paths.
     dashboard_paths = {
         "index_path": DASHBOARD_DIR / "index.html",
         "data_script_path": DASHBOARD_DATA_PATH,
@@ -63,6 +68,7 @@ def write_result(payload: dict[str, Any]) -> dict[str, Path]:
 
 
 def _write_json(path: Path, payload: dict[str, Any]) -> None:
+    """Write one UTF-8 JSON file with a trailing newline."""
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
         json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
@@ -71,6 +77,7 @@ def _write_json(path: Path, payload: dict[str, Any]) -> None:
 
 
 def _write_dashboard_data(payload: dict[str, Any]) -> dict[str, Path]:
+    """Publish latest dashboard data as static JS and JSON files."""
     # The dashboard is static HTML, so the CLI publishes its latest result as a
     # JavaScript assignment instead of requiring a local API server. The React
     # app consumes the same contract from web/public until the REST API becomes
@@ -94,6 +101,7 @@ def _write_dashboard_data(payload: dict[str, Any]) -> dict[str, Path]:
 
 
 def _repo_safe_payload(value: Any) -> Any:
+    """Recursively convert absolute repo paths inside payload strings."""
     if isinstance(value, dict):
         return {key: _repo_safe_payload(item) for key, item in value.items()}
     if isinstance(value, list):
@@ -104,6 +112,7 @@ def _repo_safe_payload(value: Any) -> Any:
 
 
 def _repo_safe_path(value: str) -> str:
+    """Return a repo-relative path string when an absolute path is under BASE_DIR."""
     path = Path(value)
     if not path.is_absolute():
         return value
@@ -115,6 +124,7 @@ def _repo_safe_path(value: str) -> str:
 
 
 def _new_run_dir() -> Path:
+    """Create a unique timestamped output directory path for this run."""
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     run_dir = RUNS_OUTPUT_DIR / stamp
     suffix = 1

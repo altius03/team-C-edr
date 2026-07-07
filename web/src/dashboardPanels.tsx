@@ -23,6 +23,7 @@ import {
 
 const SEVERITY_ORDER: readonly Severity[] = ["critical", "warning", "suspicious", "info"];
 
+// Presentation components receive already-adapted rows and avoid owning data parsing rules.
 export function Kpi({
   accent = "neutral",
   icon,
@@ -46,6 +47,7 @@ export function Kpi({
   );
 }
 
+// Renders a panel title, subtitle, and count chip consistently.
 export function PanelHeading({
   title,
   subtitle,
@@ -66,6 +68,7 @@ export function PanelHeading({
   );
 }
 
+// The SVG view intentionally limits nodes and flows so dense telemetry stays readable.
 export function TopologyCanvas({
   nodes,
   edges
@@ -124,6 +127,7 @@ export function TopologyCanvas({
   );
 }
 
+// Chart controls expose severity as a filter action while bar widths remain count-based.
 export function SeverityChart({
   counts,
   active,
@@ -166,6 +170,7 @@ export function SeverityChart({
   );
 }
 
+// Event volume is bucketed by hour and capped to the latest ten buckets for density.
 export function VolumeChart({
   events,
   alerts
@@ -194,6 +199,7 @@ export function VolumeChart({
   );
 }
 
+// Renders compact horizontal bars for rule, tactic, or source counts.
 export function CountBars({ rows, kind }: { readonly rows: readonly CountRow[]; readonly kind: string }) {
   if (!rows.length) return <EmptyState label="현재 필터 범위에 ranked data가 없습니다" />;
   const maxCount = Math.max(...rows.map((row) => row.count), 1);
@@ -214,6 +220,7 @@ export function CountBars({ rows, kind }: { readonly rows: readonly CountRow[]; 
   );
 }
 
+// Shows high-level telemetry coverage signals.
 export function SignalStrip({
   signals
 }: {
@@ -237,6 +244,7 @@ export function SignalStrip({
   );
 }
 
+// Shows active incidents in analyst triage order.
 export function IncidentQueue({ incidents }: { readonly incidents: readonly Incident[] }) {
   if (!incidents.length) return <EmptyState label="선택한 범위에 incident가 없습니다" />;
   return (
@@ -258,6 +266,7 @@ export function IncidentQueue({ incidents }: { readonly incidents: readonly Inci
   );
 }
 
+// Shows endpoint risk scores and top contributing rules.
 export function EndpointRiskList({ rows }: { readonly rows: readonly EndpointRisk[] }) {
   if (!rows.length) return <EmptyState label="현재 범위에 endpoint risk row가 없습니다" />;
   return (
@@ -283,6 +292,7 @@ export function EndpointRiskList({ rows }: { readonly rows: readonly EndpointRis
   );
 }
 
+// Shows incident stages and alert events in time order.
 export function Timeline({ rows }: { readonly rows: readonly TimelineItem[] }) {
   if (!rows.length) return <EmptyState label="현재 범위에 연결된 attack timeline이 없습니다" />;
   return (
@@ -299,6 +309,7 @@ export function Timeline({ rows }: { readonly rows: readonly TimelineItem[] }) {
   );
 }
 
+// Shows schema failures that should be fixed before ingestion.
 export function DlqMonitor({ rows }: { readonly rows: readonly DlqEvent[] }) {
   if (!rows.length) return <EmptyState label="현재 DLQ로 이동한 event가 없습니다" />;
   return (
@@ -316,6 +327,7 @@ export function DlqMonitor({ rows }: { readonly rows: readonly DlqEvent[] }) {
   );
 }
 
+// Shows parent-child process evidence linked to endpoint activity.
 export function ProcessTreePanel({ rows }: { readonly rows: readonly ProcessTreeRow[] }) {
   if (!rows.length) return <EmptyState label="현재 범위에 process tree row가 없습니다" />;
   return (
@@ -334,6 +346,7 @@ export function ProcessTreePanel({ rows }: { readonly rows: readonly ProcessTree
   );
 }
 
+// Shows selected alert evidence, MITRE tags, and affected events.
 export function AlertInspector({ alert }: { readonly alert: Alert }) {
   return (
     <div className={`inspector ${alert.severity}`}>
@@ -359,6 +372,7 @@ export function AlertInspector({ alert }: { readonly alert: Alert }) {
   );
 }
 
+// Shows generated report and pipeline artifact status.
 export function ReportCenter({
   aiSummary,
   decision,
@@ -396,6 +410,7 @@ export function ReportCenter({
   );
 }
 
+// Shows selectable alert rows for inspection.
 export function AlertList({
   alerts,
   selectedAlertId,
@@ -424,6 +439,7 @@ export function AlertList({
   );
 }
 
+// Shows normalized telemetry rows used by detection rules.
 export function EventTable({ events }: { readonly events: readonly EventRow[] }) {
   if (!events.length) return <EmptyState label="선택한 필터에 맞는 event가 없습니다" />;
   return (
@@ -456,6 +472,7 @@ export function EventTable({ events }: { readonly events: readonly EventRow[] })
   );
 }
 
+// Shows response actions derived from alerts.
 export function ResponsePlan({ actions }: { readonly actions: readonly ResponseAction[] }) {
   if (!actions.length) return <EmptyState label="생성된 response action이 없습니다" />;
   return (
@@ -474,6 +491,7 @@ export function ResponsePlan({ actions }: { readonly actions: readonly ResponseA
   );
 }
 
+// Renders a compact empty message for panels with no rows.
 export function EmptyState({ label }: { readonly label: string }) {
   return <div className="empty-state">{label}</div>;
 }
@@ -495,6 +513,7 @@ type ReportModalProps = {
   readonly triggerLabel?: string;
 };
 
+// Report modal content mirrors generated artifacts so browser print stays self-contained.
 export function ReportModal({
   decision,
   edrState,
@@ -583,6 +602,7 @@ export function ReportModal({
   );
 }
 
+// Renders one topology node with side-aware label placement.
 function GraphNode({ node, side }: { readonly node: PositionedNode; readonly side: "left" | "right" }) {
   const textX = side === "left" ? -34 : 34;
   const anchor = side === "left" ? "end" : "start";
@@ -598,6 +618,7 @@ function GraphNode({ node, side }: { readonly node: PositionedNode; readonly sid
 
 type PositionedNode = TopologyNode & { readonly x: number; readonly y: number };
 
+// Fixed x lanes and interpolated y positions keep topology geometry deterministic.
 function positionNodes(nodes: readonly TopologyNode[], x: number, minY: number, maxY: number): readonly PositionedNode[] {
   const visibleNodes = nodes.length ? nodes : [{ id: "empty", label: "No data", layer: "empty", state: "not-detected", riskScore: 0, alertCount: 0 }];
   const step = visibleNodes.length === 1 ? 0 : (maxY - minY) / (visibleNodes.length - 1);
@@ -608,12 +629,14 @@ function positionNodes(nodes: readonly TopologyNode[], x: number, minY: number, 
   }));
 }
 
+// Chooses the strongest visual state for a topology edge.
 function edgeState(edge: TopologyEdge): string {
   if (edge.alertCount > 0 || edge.state === "alert") return "alert";
   if (edge.state === "observed") return "observed";
   return "not-detected";
 }
 
+// Bucket helpers normalize timestamps once for both event and alert volume charts.
 function buildBuckets(events: readonly EventRow[], alerts: readonly Alert[]) {
   const buckets = new Map<string, { label: string; shortLabel: string; events: number; alerts: number }>();
   for (const event of events) {
@@ -631,6 +654,7 @@ function buildBuckets(events: readonly EventRow[], alerts: readonly Alert[]) {
   return [...buckets.values()].sort((a, b) => a.label.localeCompare(b.label));
 }
 
+// Normalizes timestamps into sortable hour bucket keys.
 function hourBucket(value: string): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "unknown";
@@ -640,6 +664,7 @@ function hourBucket(value: string): string {
   return `${month}-${day} ${hour}:00`;
 }
 
+// Formats ISO timestamps for compact table and timeline labels.
 function formatTime(value: string): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "-";
@@ -650,6 +675,7 @@ function formatTime(value: string): string {
   return `${month}-${day} ${hour}:${minute}`;
 }
 
+// Formats byte counts into readable units for dashboard tables.
 function formatBytes(value: number): string {
   if (!value) return "-";
   if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)} MB`;
@@ -657,14 +683,17 @@ function formatBytes(value: number): string {
   return `${value} B`;
 }
 
+// Bounds a percentage-like value for CSS sizing.
 function clamp(value: number): number {
   return Math.min(100, Math.max(0, value));
 }
 
+// Extracts a readable file name from an artifact path.
 function fileName(value: string): string {
   return value.split(/[\\/]/).pop() || value;
 }
 
+// Converts internal state tokens into display labels.
 function stateLabel(state: string): string {
   if (state === "alert") return "alert";
   if (state === "observed") return "observed";

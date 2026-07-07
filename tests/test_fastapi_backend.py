@@ -1,3 +1,5 @@
+"""Protect FastAPI REST behavior through real local HTTP requests."""
+
 import json
 import http.client
 import sys
@@ -20,7 +22,10 @@ from src.service_worker import run_default_analysis_job
 
 
 class FastAPIBackendTests(unittest.TestCase):
+    """Exercise service endpoints, OpenAPI paths, and ingestion error handling."""
+
     def test_fastapi_app_exposes_service_contract_and_openapi(self) -> None:
+        """Ensure the HTTP API serves health, dashboard, incidents, reports, and tasks."""
         with tempfile.TemporaryDirectory() as temp_dir:
             store = ServiceStore(Path(temp_dir) / "layertrace.sqlite3")
             store.initialize()
@@ -65,6 +70,7 @@ class FastAPIBackendTests(unittest.TestCase):
             self.assertIn("/v1/tasks/{task_id}", openapi["paths"])
 
     def test_fastapi_ingest_rejects_missing_token_and_bad_json(self) -> None:
+        """Ensure ingestion rejects unauthenticated and malformed requests."""
         with tempfile.TemporaryDirectory() as temp_dir:
             store = ServiceStore(Path(temp_dir) / "layertrace.sqlite3")
             store.initialize()
@@ -108,6 +114,7 @@ class FastAPIBackendTests(unittest.TestCase):
 
 
 def _get_json(port: int, path: str) -> JsonObject:
+    """Fetch a JSON object from the temporary HTTP service."""
     connection = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
     try:
         connection.request("GET", path)
@@ -121,6 +128,7 @@ def _get_json(port: int, path: str) -> JsonObject:
 
 
 def _post_json(port: int, path: str, payload: JsonObject, headers: dict[str, str]) -> JsonObject:
+    """Post JSON and require the accepted ingestion response."""
     result = _post_raw(port, path, json.dumps(payload), headers)
     if result["status"] != 202:
         raise AssertionError(f"POST {path} returned {result['status']}: {result['body']}")
@@ -131,6 +139,7 @@ def _post_json(port: int, path: str, payload: JsonObject, headers: dict[str, str
 
 
 def _post_raw(port: int, path: str, body: str, headers: dict[str, str]) -> JsonObject:
+    """Post raw request text so tests can cover malformed JSON payloads."""
     encoded = body.encode("utf-8")
     connection = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
     try:
@@ -148,6 +157,7 @@ def _post_raw(port: int, path: str, body: str, headers: dict[str, str]) -> JsonO
 
 
 def _wait_for_task(port: int, task_id: str) -> JsonObject:
+    """Poll the task endpoint until the local analysis finishes."""
     for _ in range(40):
         payload = _get_json(port, f"/v1/tasks/{task_id}")
         if payload.get("status") in {"succeeded", "failed"}:
@@ -157,6 +167,7 @@ def _wait_for_task(port: int, task_id: str) -> JsonObject:
 
 
 def _json_body(body: str) -> JsonObject:
+    """Parse an HTTP response body and require a JSON object contract."""
     parsed: JsonValue = json.loads(body)
     if not isinstance(parsed, dict):
         raise AssertionError(f"response did not return a JSON object: {body}")

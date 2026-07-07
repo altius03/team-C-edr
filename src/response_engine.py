@@ -1,3 +1,5 @@
+"""Map detection alerts to response actions without executing actuators."""
+
 from __future__ import annotations
 
 from collections import Counter
@@ -5,6 +7,8 @@ from datetime import datetime
 from typing import Any
 
 
+# Rule-to-action mapping stays descriptive because this PoC must not mutate
+# firewall, endpoint, or identity state without an approved integration.
 ACTION_BY_RULE = {
     "R001": ("block_destination", "Block known malicious domain/IP at DNS or proxy policy."),
     "R002": ("quarantine_download", "Quarantine executable downloaded from suspicious source."),
@@ -23,6 +27,8 @@ ACTION_BY_RULE = {
 
 
 def build_response_plan(result: dict[str, Any], *, mode: str = "dry-run") -> dict[str, Any]:
+    """Return planned or queued response actions for each alert in a result."""
+
     actions: list[dict[str, Any]] = []
     for alert in result.get("alerts", []):
         action_type, description = ACTION_BY_RULE.get(

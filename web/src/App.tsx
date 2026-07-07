@@ -38,6 +38,7 @@ import {
 type TimeRange = "last10m" | "last1h" | "last24h" | "all";
 type SeverityFilter = Severity | "all";
 
+// Shared filter literals keep select controls and scoping predicates on one contract.
 const TIME_RANGES: readonly TimeRange[] = ["last10m", "last1h", "last24h", "all"];
 const TIME_RANGE_LABELS: Readonly<Record<TimeRange, string>> = {
   last10m: "Last 10m",
@@ -48,7 +49,9 @@ const TIME_RANGE_LABELS: Readonly<Record<TimeRange, string>> = {
 
 const SEVERITIES: readonly Severity[] = ["critical", "warning", "suspicious", "info"];
 
+// Coordinates dashboard state, filters, and panel data for the main React view.
 export function App() {
+  // Seed from the embedded result so the shell renders before the async source resolves.
   const [result, setResult] = useState<DashboardResult>(() => readDashboardResult());
   const [timeRange, setTimeRange] = useState<TimeRange>("last24h");
   const [severityFilter, setSeverityFilter] = useState<SeverityFilter>("all");
@@ -65,6 +68,7 @@ export function App() {
     return () => controller.abort();
   }, []);
 
+  // Every panel derives its rows from the same normalized filters to avoid split views.
   const latestObservedAt = useMemo(() => latestObservedTime(result), [result]);
   const hostOptions = useMemo(() => buildHostOptions(result), [result]);
   const query = search.trim().toLowerCase();
@@ -289,6 +293,7 @@ export function App() {
   );
 }
 
+// Scope predicates centralize dashboard filtering while preserving each panel's row shape.
 function matchesAlertScope(
   alert: Alert,
   hostFilter: string,
@@ -305,6 +310,7 @@ function matchesAlertScope(
   return includesQuery(haystack, query);
 }
 
+// Checks whether a telemetry event matches host, search, and time filters.
 function matchesEventScope(event: EventRow, hostFilter: string, query: string, timeRange: TimeRange, latestObservedAt: Date | null): boolean {
   if (hostFilter !== "all" && event.hostId !== hostFilter) return false;
   if (!matchesTimeRange(event.eventTime, timeRange, latestObservedAt)) return false;
@@ -313,6 +319,7 @@ function matchesEventScope(event: EventRow, hostFilter: string, query: string, t
   return includesQuery(haystack, query);
 }
 
+// Checks whether an incident belongs in the current incident queue.
 function matchesIncidentScope(incident: Incident, hostFilter: string, severityFilter: SeverityFilter, query: string): boolean {
   if (hostFilter !== "all" && incident.hostId !== hostFilter) return false;
   if (severityFilter !== "all" && incident.severity !== severityFilter) return false;
@@ -328,6 +335,7 @@ function matchesIncidentScope(incident: Incident, hostFilter: string, severityFi
   return includesQuery(haystack, query);
 }
 
+// Filters timeline rows while keeping severity and host labels aligned.
 function matchesTimelineScope(
   item: TimelineItem,
   hostOptions: ReadonlyMap<string, string>,
@@ -344,6 +352,7 @@ function matchesTimelineScope(
   return includesQuery([item.host, item.stage, item.summary, item.severity].join(" "), query);
 }
 
+// Filters endpoint risk rows without dropping active hosts that have evidence.
 function matchesEndpointRiskScope(
   row: EndpointRisk,
   hostFilter: string,
@@ -358,6 +367,7 @@ function matchesEndpointRiskScope(
   return includesQuery(haystack, query) || activeHostIds.has(row.hostId);
 }
 
+// Filters process-tree rows by host, search text, and time window.
 function matchesProcessScope(row: ProcessTreeRow, hostFilter: string, query: string, timeRange: TimeRange, latestObservedAt: Date | null): boolean {
   if (hostFilter !== "all" && row.hostId !== hostFilter) return false;
   if (!matchesTimeRange(row.eventTime, timeRange, latestObservedAt)) return false;
@@ -366,11 +376,13 @@ function matchesProcessScope(row: ProcessTreeRow, hostFilter: string, query: str
   return includesQuery(haystack, query);
 }
 
+// Filters DLQ rows by event id, error code, and validation messages.
 function matchesDlqScope(row: DlqEvent, query: string): boolean {
   if (!query) return true;
   return includesQuery([row.eventId, row.code, row.errors.join(" ")].join(" "), query);
 }
 
+// Topology filtering keeps matching edges first, then preserves enough nodes for context.
 function scopeTopology(
   topology: DashboardResult["topology"],
   hostFilter: string,
@@ -403,6 +415,7 @@ function scopeTopology(
   };
 }
 
+// Relative time windows are anchored to the newest observed timestamp in the sample.
 function matchesTimeRange(value: string, timeRange: TimeRange, latestObservedAt: Date | null): boolean {
   if (timeRange === "all") return true;
   const date = new Date(value);
@@ -415,6 +428,7 @@ function matchesTimeRange(value: string, timeRange: TimeRange, latestObservedAt:
   return latestObservedAt.getTime() - date.getTime() <= ranges[timeRange];
 }
 
+// Counts alerts by severity for chart bars and filter buttons.
 function countSeverity(alerts: readonly Alert[]): Readonly<Record<Severity | "all", number>> {
   return {
     all: alerts.length,
@@ -425,6 +439,7 @@ function countSeverity(alerts: readonly Alert[]): Readonly<Record<Severity | "al
   };
 }
 
+// Finds the newest timestamp so sample-relative time filters behave consistently.
 function latestObservedTime(result: DashboardResult): Date | null {
   const dates = [...result.events.map((event) => event.eventTime), ...result.alerts.map((alert) => alert.eventTime), ...result.timeline.map((item) => item.time)]
     .map((value) => new Date(value))
@@ -433,6 +448,7 @@ function latestObservedTime(result: DashboardResult): Date | null {
   return new Date(Math.max(...dates.map((value) => value.getTime())));
 }
 
+// Builds the host selector map from every panel data source.
 function buildHostOptions(result: DashboardResult): ReadonlyMap<string, string> {
   const hosts = new Map<string, string>();
   for (const endpoint of result.endpointRisk) hosts.set(endpoint.hostId, endpoint.host);
@@ -445,6 +461,7 @@ function buildHostOptions(result: DashboardResult): ReadonlyMap<string, string> 
   return hosts;
 }
 
+// Signal cards summarize cross-layer coverage without changing the underlying counts.
 function buildSignals(result: DashboardResult) {
   const processEvents = result.events.filter((event) => event.eventType === "process_start").length;
   const networkEvents = result.events.filter((event) => event.eventType === "network_connection").length;
@@ -477,6 +494,7 @@ function buildSignals(result: DashboardResult) {
   ] as const;
 }
 
+// Normalizes select input text into a supported time-range value.
 function toTimeRange(value: string): TimeRange {
   switch (value) {
     case "last10m":
@@ -489,6 +507,7 @@ function toTimeRange(value: string): TimeRange {
   }
 }
 
+// Normalizes select input text into a supported severity filter.
 function toSeverityFilter(value: string): SeverityFilter {
   switch (value) {
     case "critical":
@@ -501,6 +520,7 @@ function toSeverityFilter(value: string): SeverityFilter {
   }
 }
 
+// Converts internal state tokens into display labels.
 function stateLabel(state: string): string {
   switch (state) {
     case "red":
@@ -514,10 +534,12 @@ function stateLabel(state: string): string {
   }
 }
 
+// Performs case-insensitive search matching for panel filters.
 function includesQuery(value: string, query: string): boolean {
   return value.toLowerCase().includes(query);
 }
 
+// Formats ISO timestamps for compact table and timeline labels.
 function formatTime(value: string): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
@@ -528,6 +550,7 @@ function formatTime(value: string): string {
   return `${month}-${day} ${hour}:${minute}`;
 }
 
+// Formats byte counts into readable units for dashboard tables.
 function formatBytes(value: number): string {
   if (!value) return "-";
   if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)} MB`;

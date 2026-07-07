@@ -1,4 +1,5 @@
 services:
+  # Stateful store for API persistence during local PoC runs.
   postgres:
     image: postgres:16-alpine
     environment:
@@ -15,6 +16,7 @@ services:
       timeout: 3s
       retries: 10
 
+  # Kafka-compatible broker for stream-oriented ingestion tests.
   redpanda:
     image: redpandadata/redpanda:latest
     command:
@@ -31,6 +33,7 @@ services:
       - "9092:9092"
       - "9644:9644"
 
+  # API uses token-required local defaults and delegates background work externally.
   api:
     build:
       context: .
@@ -48,6 +51,7 @@ services:
       postgres:
         condition: service_healthy
 
+  # Worker shares the API image so jobs run against the same application code.
   worker:
     build:
       context: .
@@ -60,6 +64,7 @@ services:
       postgres:
         condition: service_healthy
 
+  # Frontend image serves the Vite build and targets the local API by default.
   frontend:
     build:
       context: .
@@ -72,4 +77,5 @@ services:
       - api
 
 volumes:
+  # Named volume keeps database state across compose restarts.
   postgres-data:

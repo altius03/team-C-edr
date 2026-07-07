@@ -1,3 +1,5 @@
+"""Build deterministic host-risk predictions from detector output."""
+
 from __future__ import annotations
 
 from collections import Counter, defaultdict
@@ -5,10 +7,14 @@ from datetime import datetime
 from typing import Any
 
 
+# Rules with stronger C2, exfiltration, L7, or malware evidence raise the
+# deterministic PoC score more than weak standalone signals.
 HIGH_VALUE_RULES = {"R004", "R005", "R008", "R009", "R010", "R011"}
 
 
 def build_ai_predictions(result: dict[str, Any]) -> dict[str, Any]:
+    """Return host-level risk predictions derived from alerts and incidents."""
+
     alerts_by_host: dict[str, list[dict[str, Any]]] = defaultdict(list)
     incidents_by_host: Counter[str] = Counter()
     for alert in result.get("alerts", []):
@@ -57,6 +63,8 @@ def build_ai_predictions(result: dict[str, Any]) -> dict[str, Any]:
 
 
 def _chain_bonus(rules: set[str]) -> int:
+    """Score extra risk for rule chains that resemble attack progression."""
+
     bonus = 0
     if {"R001", "R002", "R003", "R004"}.issubset(rules):
         bonus += 16
@@ -68,6 +76,8 @@ def _chain_bonus(rules: set[str]) -> int:
 
 
 def _label(score: int) -> str:
+    """Map the numeric prediction score to a stable risk label."""
+
     if score >= 85:
         return "critical"
     if score >= 65:
@@ -78,6 +88,8 @@ def _label(score: int) -> str:
 
 
 def _reason(rules: set[str]) -> str:
+    """Explain the strongest feature family behind a host prediction."""
+
     if {"R004", "R005"}.issubset(rules):
         return "Beaconing and outbound transfer appeared together."
     if {"R009", "R010"} & rules:

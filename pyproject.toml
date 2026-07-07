@@ -1,8 +1,11 @@
 [project]
+# Minimal application metadata is enough for uv to install and run local services.
 name = "security-edr-agent-parser"
 version = "0.1.0"
 description = "Offline lightweight EDR agent telemetry parser with rule-based detection and a static dashboard."
 requires-python = ">=3.11"
+
+# Runtime dependencies cover the FastAPI service, database access, validation, and ASGI serving.
 dependencies = [
   "fastapi>=0.115,<1.0",
   "psycopg[binary]>=3.2,<4.0",

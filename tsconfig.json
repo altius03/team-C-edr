@@ -1,5 +1,6 @@
 {
   "compilerOptions": {
+    // Browser output targets Vite's modern ESM pipeline and DOM APIs used by React.
     "target": "ES2022",
     "useDefineForClassFields": true,
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
@@ -7,6 +8,7 @@
     "skipLibCheck": true,
     "esModuleInterop": true,
     "allowSyntheticDefaultImports": true,
+    // Strictness flags make adapter fallbacks explicit and prevent unsafe indexed reads.
     "strict": true,
     "forceConsistentCasingInFileNames": true,
     "module": "ESNext",
@@ -20,6 +22,7 @@
     "verbatimModuleSyntax": true,
     "noFallthroughCasesInSwitch": true
   },
+  // Limit checking to the React dashboard source and leave generated/static outputs alone.
   "include": ["web/src"],
   "references": []
 }

@@ -1,3 +1,5 @@
+"""CLI entry point that normalizes inputs, runs analysis, and writes results."""
+
 from __future__ import annotations
 
 import argparse
@@ -18,6 +20,7 @@ from .sample_loader import SampleLoadError, load_events
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Run the offline analysis pipeline and return a process exit code."""
     parser = argparse.ArgumentParser(description="Offline EDR agent telemetry parser PoC")
     parser.add_argument("--events-file", help="Path to sample endpoint/network event JSON.")
     parser.add_argument("--collect-local", action="store_true", help="Collect local Windows endpoint/network metadata.")
@@ -34,6 +37,9 @@ def main(argv: list[str] | None = None) -> int:
 
     input_meta: dict[str, Any] = {}
     try:
+        # Only one primary source feeds the first event set: either live local
+        # metadata collection or a sample event file. Optional PCAP/L7 sources
+        # are merged later so downstream analysis sees one normalized stream.
         if args.collect_local:
             raw_events, input_meta = collect_local_events(
                 lookback_hours=args.lookback_hours,
@@ -126,6 +132,7 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _resolve_events_path(requested_path: str | None) -> Path:
+    """Resolve a CLI-provided event path or fall back to the bundled sample."""
     if requested_path:
         path = Path(requested_path)
         return path if path.is_absolute() else Path.cwd() / path
@@ -139,6 +146,7 @@ def _extend_with_optional_sources(
     pcap_file: str | None,
     l7_file: str | None,
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """Append optional PCAP and L7-derived events while preserving source metadata."""
     combined = list(raw_events)
     sources = [input_meta]
     if pcap_file:
@@ -165,6 +173,7 @@ def _extend_with_optional_sources(
 
 
 def _print_result(paths: dict[str, Path], status: str, decision: str) -> None:
+    """Print the persisted result locations expected by humans and scripts."""
     print(f"status={status}")
     if decision:
         print(f"decision={decision}")

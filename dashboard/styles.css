@@ -1,4 +1,5 @@
 :root {
+  /* Static dashboard tokens mirror the React dashboard so both surfaces read as one product. */
   color-scheme: dark;
   --bg: #101215;
   --shell: #15191f;
@@ -24,6 +25,7 @@
   box-sizing: border-box;
 }
 
+/* Base page rules keep the static dashboard usable as a generated artifact. */
 html {
   scroll-behavior: smooth;
 }
@@ -49,12 +51,14 @@ select {
   font: inherit;
 }
 
+/* The static shell uses the same navigation-plus-content shape as the React dashboard. */
 .app-shell {
   display: grid;
   grid-template-columns: 232px minmax(0, 1fr);
   min-height: 100vh;
 }
 
+/* Sidebar carries navigation and source commands for switching telemetry inputs. */
 .sidebar {
   position: sticky;
   top: 0;
@@ -171,6 +175,7 @@ select {
   min-width: 0;
 }
 
+/* Topbar, filters, and summary cards are the first scan path for this no-server page. */
 .topbar {
   position: sticky;
   top: 0;

@@ -1,3 +1,5 @@
+"""Expose the FastAPI REST surface for health, dashboard, ingest, and task state."""
+
 from __future__ import annotations
 
 import os
@@ -41,6 +43,8 @@ _INGEST_HEADER_PARAMETERS: Final[list[JsonObject]] = [
 
 @dataclass(frozen=True, slots=True)
 class ApiError(Exception):
+    """Typed HTTP error translated into the public JSON error envelope."""
+
     status_code: int
     code: str
     message: str
@@ -51,6 +55,8 @@ def create_app(
     task_queue: TaskQueue | None = None,
     settings: ApiSettings | None = None,
 ) -> FastAPI:
+    """Create the REST application with injected or environment-backed services."""
+
     actual_settings = settings or _settings_from_env()
     actual_store = store or ServiceStore()
     actual_store.initialize()
@@ -69,19 +75,27 @@ def create_app(
 
     @app.exception_handler(ApiError)
     async def api_error_handler(_: Request, exc: ApiError) -> JSONResponse:
+        """Render service-raised API errors without leaking implementation details."""
+
         return _json_error(exc.code, exc.message, exc.status_code)
 
     @app.exception_handler(RequestValidationError)
     async def request_validation_handler(_: Request, exc: RequestValidationError) -> JSONResponse:
+        """Normalize FastAPI request parsing failures into the service error shape."""
+
         code = _validation_error_code(exc)
         return _json_error(code, str(exc.errors()[0].get("msg", "invalid request")), status.HTTP_400_BAD_REQUEST)
 
     @app.get("/v1/health", response_model=HealthResponse, tags=["health"])
     def health(request: Request) -> HealthResponse:
+        """Expose liveness plus the active storage and queue adapters."""
+
         return HealthResponse(storage=_store(request).storage_label, queue=_queue(request).queue_label)
 
     @app.get("/v1/dashboard/latest", response_model=DashboardResult, tags=["dashboard"])
     def dashboard_latest(request: Request) -> DashboardResult:
+        """Return the newest persisted analysis result for dashboard rendering."""
+
         latest = _store(request).get_latest_run()
         if latest is None:
             return DashboardResult(status="empty", message="no analysis run stored yet")
@@ -89,10 +103,14 @@ def create_app(
 
     @app.get("/v1/reports/latest", response_model=ReportLatestResponse, tags=["reports"])
     def reports_latest(request: Request) -> ReportLatestResponse:
+        """Return latest generated report metadata when a run includes it."""
+
         return _latest_report(_store(request).get_latest_run())
 
     @app.get("/v1/incidents", response_model=IncidentListResponse, tags=["incidents"])
     def incidents(request: Request, severity: Severity | None = None) -> IncidentListResponse:
+        """List persisted incidents, optionally narrowed by severity."""
+
         return IncidentListResponse(incidents=_store(request).list_incidents(severity=severity.value if severity else None))
 
     @app.post(
@@ -103,6 +121,8 @@ def create_app(
         openapi_extra={"parameters": _INGEST_HEADER_PARAMETERS},
     )
     def telemetry_events(payload: TelemetryBatchRequest, request: Request) -> IngestResponse:
+        """Authenticate and enqueue telemetry for analysis without blocking on work."""
+
         _require_api_token(request)
         headers = _tenant_headers(request)
         event_objects = [event for event in payload.events if isinstance(event, dict)]
@@ -126,6 +146,8 @@ def create_app(
 
     @app.get("/v1/tasks/{task_id}", response_model=TaskStatusResponse, tags=["tasks"])
     def task_detail(task_id: str, request: Request) -> TaskStatusResponse:
+        """Return queue state and result metadata for a submitted task."""
+
         try:
             task = _store(request).get_task(task_id)
         except KeyError:
@@ -142,6 +164,8 @@ def create_app(
 
 
 def _settings_from_env() -> ApiSettings:
+    """Read REST settings from environment variables with local defaults."""
+
     return ApiSettings(
         require_api_token=_env_bool("LAYERTRACE_REQUIRE_API_TOKEN", True),
         api_token=os.environ.get("LAYERTRACE_API_TOKEN", "local-dev-token"),
@@ -151,6 +175,8 @@ def _settings_from_env() -> ApiSettings:
 
 
 def _task_queue_from_settings(store: ServiceStore, settings: ApiSettings) -> TaskQueue:
+    """Select local execution or database-backed external worker queue mode."""
+
     match settings.task_runner:
         case "external":
             return DatabaseTaskQueue(store)
@@ -161,6 +187,8 @@ def _task_queue_from_settings(store: ServiceStore, settings: ApiSettings) -> Tas
 
 
 def _store(request: Request) -> ServiceStore:
+    """Fetch the configured persistence adapter from FastAPI state."""
+
     store = request.app.state.store
     if not isinstance(store, ServiceStore):
         raise RuntimeError("FastAPI app state does not contain ServiceStore")
@@ -168,6 +196,8 @@ def _store(request: Request) -> ServiceStore:
 
 
 def _queue(request: Request) -> TaskQueue:
+    """Fetch the configured task queue adapter from FastAPI state."""
+
     queue = request.app.state.task_queue
     if not isinstance(queue, TaskQueue):
         raise RuntimeError("FastAPI app state does not contain TaskQueue")
@@ -175,6 +205,8 @@ def _queue(request: Request) -> TaskQueue:
 
 
 def _settings(request: Request) -> ApiSettings:
+    """Fetch immutable API settings from FastAPI state."""
+
     settings = request.app.state.settings
     if not isinstance(settings, ApiSettings):
         raise RuntimeError("FastAPI app state does not contain ApiSettings")
@@ -182,6 +214,8 @@ def _settings(request: Request) -> ApiSettings:
 
 
 def _tenant_headers(request: Request) -> TenantHeaders:
+    """Parse required tenant and agent headers at the HTTP boundary."""
+
     headers = request.headers
     missing = [name for name in ("X-Customer-Id", "X-Tenant-Id", "X-Agent-Version", "X-Payload-Version") if not headers.get(name)]
     if missing:
@@ -198,6 +232,8 @@ def _tenant_headers(request: Request) -> TenantHeaders:
 
 
 def _require_api_token(request: Request) -> None:
+    """Enforce configured API token auth using header or Bearer credentials."""
+
     settings = _settings(request)
     if not settings.require_api_token:
         return
@@ -212,6 +248,8 @@ def _require_api_token(request: Request) -> None:
 
 
 def _input_meta(headers: TenantHeaders) -> JsonObject:
+    """Convert trusted tenant headers into analysis job metadata."""
+
     return {
         "source": "rest_api",
         "customer_id": headers.customer_id,
@@ -222,6 +260,8 @@ def _input_meta(headers: TenantHeaders) -> JsonObject:
 
 
 def _latest_report(latest: JsonObject | None) -> ReportLatestResponse:
+    """Project stored run payloads into the report metadata response."""
+
     if latest is None:
         return ReportLatestResponse(status="empty", message="no report generated yet")
     report = latest.get("report")
@@ -236,10 +276,14 @@ def _latest_report(latest: JsonObject | None) -> ReportLatestResponse:
 
 
 def _text(value: JsonValue) -> str | None:
+    """Return string JSON values and drop every other JSON type."""
+
     return value if isinstance(value, str) else None
 
 
 def _env_bool(name: str, default: bool) -> bool:
+    """Read a boolean-like environment variable with a fallback."""
+
     value = os.environ.get(name)
     if value is None:
         return default
@@ -247,11 +291,15 @@ def _env_bool(name: str, default: bool) -> bool:
 
 
 def _env_csv(name: str) -> list[str]:
+    """Read a comma-separated environment variable into trimmed entries."""
+
     value = os.environ.get(name, "")
     return [item.strip() for item in value.split(",") if item.strip()]
 
 
 def _default_cors_origins() -> list[str]:
+    """Return local development origins accepted by browser clients."""
+
     return [
         "http://127.0.0.1:5173",
         "http://localhost:5173",
@@ -263,9 +311,13 @@ def _default_cors_origins() -> list[str]:
 
 
 def _validation_error_code(exc: RequestValidationError) -> str:
+    """Distinguish malformed JSON from other request validation failures."""
+
     first = exc.errors()[0] if exc.errors() else {}
     return "invalid_json" if first.get("type") == "json_invalid" else "invalid_request"
 
 
 def _json_error(code: str, message: str, status_code: int) -> JSONResponse:
+    """Build the canonical JSON error response for REST callers."""
+
     return JSONResponse(status_code=status_code, content=ErrorResponse(error=code, message=message).model_dump())

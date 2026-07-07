@@ -1,3 +1,5 @@
+"""Run the local LayerTrace REST API against the configured service store."""
+
 from __future__ import annotations
 
 import argparse
@@ -21,6 +23,7 @@ from src.task_queue import DatabaseTaskQueue, LocalTaskRunner
 
 
 def main() -> int:
+    """Start the HTTP service with optional startup seeding for local validation."""
     logging.basicConfig(level=os.environ.get("LAYERTRACE_LOG_LEVEL", "INFO"), format="%(asctime)s %(levelname)s %(name)s %(message)s")
     parser = argparse.ArgumentParser(description="Run the local LayerTrace FastAPI REST service.")
     parser.add_argument("--host", default="127.0.0.1")
@@ -52,6 +55,7 @@ def main() -> int:
 
 
 def _seed_store(store: ServiceStore, *, seed_latest: bool, seed_sample: bool) -> None:
+    """Populate the store from the latest artifact or sample telemetry before serving."""
     latest_result_path = LATEST_OUTPUT_DIR / "result.json"
     if seed_latest and latest_result_path.exists():
         payload = json.loads(latest_result_path.read_text(encoding="utf-8"))

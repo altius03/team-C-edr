@@ -1,3 +1,5 @@
+"""Protect the React dashboard project contract and required EDR surfaces."""
+
 import json
 import unittest
 from pathlib import Path
@@ -6,7 +8,10 @@ PROJECT_DIR = Path(__file__).resolve().parents[1]
 
 
 class ReactDashboardContractTests(unittest.TestCase):
+    """Check Vite project files and dashboard text/adapter invariants."""
+
     def test_react_vite_project_contract_exists(self) -> None:
+        """Ensure React build metadata and required source files are present."""
         package_json = PROJECT_DIR / "package.json"
         self.assertTrue(package_json.exists(), package_json)
 
@@ -30,6 +35,7 @@ class ReactDashboardContractTests(unittest.TestCase):
             self.assertTrue((PROJECT_DIR / relative_path).exists(), relative_path)
 
     def test_react_dashboard_preserves_required_edr_surface(self) -> None:
+        """Ensure the dashboard keeps operational panels and data-source fallbacks."""
         app = (PROJECT_DIR / "web" / "src" / "App.tsx").read_text(encoding="utf-8")
         adapter = (PROJECT_DIR / "web" / "src" / "resultAdapter.ts").read_text(encoding="utf-8")
 

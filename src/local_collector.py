@@ -1,3 +1,5 @@
+"""Collect local Windows metadata and map it into normalized EDR events."""
+
 from __future__ import annotations
 
 import hashlib
@@ -10,7 +12,10 @@ from typing import Any, Callable
 
 
 class LocalCollectionError(Exception):
+    """Raised when a local collection source cannot return usable rows."""
+
     def __init__(self, code: str, message: str, partial_result: dict[str, Any] | None = None) -> None:
+        """Store a stable collection error code and optional partial result."""
         super().__init__(message)
         self.code = code
         self.partial_result = partial_result or {}
@@ -29,11 +34,14 @@ def collect_local_events(
     downloads_dir: Path | None = None,
     now: datetime | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """Collect local snapshots and return normalized event rows plus metadata."""
     collected_at = (now or datetime.now().astimezone()).replace(microsecond=0)
     host_id = socket.gethostname() or "local-endpoint"
     runner = command_runner or _run_powershell
     warnings: list[dict[str, str]] = []
 
+    # Raw PowerShell rows are collected first, then converted into the same
+    # event dictionary shape used by sample, PCAP, and L7 inputs.
     processes = _safe_collect("process_snapshot", _collect_process_rows, runner, warnings)
     connections = _safe_collect("tcp_connections", _collect_tcp_rows, runner, warnings)
     dns_rows: list[dict[str, Any]] = []
@@ -73,6 +81,7 @@ def _safe_collect(
     runner: CommandRunner,
     warnings: list[dict[str, str]],
 ) -> list[dict[str, Any]]:
+    """Run one collector and downgrade expected collection failures to warnings."""
     try:
         return collector(runner)
     except LocalCollectionError as error:
@@ -81,6 +90,7 @@ def _safe_collect(
 
 
 def _collect_process_rows(runner: CommandRunner) -> list[dict[str, Any]]:
+    """Collect process identifiers, parent identifiers, names, and paths."""
     command = (
         "Get-CimInstance Win32_Process | "
         "Select-Object ProcessId,ParentProcessId,Name,ExecutablePath | "
@@ -90,6 +100,7 @@ def _collect_process_rows(runner: CommandRunner) -> list[dict[str, Any]]:
 
 
 def _collect_tcp_rows(runner: CommandRunner) -> list[dict[str, Any]]:
+    """Collect established TCP connection rows from Windows networking state."""
     command = (
         "Get-NetTCPConnection -State Established | "
         "Select-Object LocalAddress,LocalPort,RemoteAddress,RemotePort,State,OwningProcess,CreationTime | "
@@ -99,6 +110,7 @@ def _collect_tcp_rows(runner: CommandRunner) -> list[dict[str, Any]]:
 
 
 def _collect_dns_rows(runner: CommandRunner) -> list[dict[str, Any]]:
+    """Collect DNS cache rows for address and CNAME records."""
     command = (
         "Get-DnsClientCache | "
         "Where-Object { $_.Entry -and ($_.Type -eq 'A' -or $_.Type -eq 'AAAA' -or $_.Type -eq 'CNAME') } | "
@@ -109,6 +121,7 @@ def _collect_dns_rows(runner: CommandRunner) -> list[dict[str, Any]]:
 
 
 def _run_json_command(runner: CommandRunner, command: str, code: str) -> list[dict[str, Any]]:
+    """Execute a JSON-producing command and coerce its output into row dicts."""
     returncode, stdout, stderr = runner(command)
     if returncode != 0:
         raise LocalCollectionError(code, stderr.strip() or f"PowerShell command failed: {command[:80]}")
@@ -122,6 +135,7 @@ def _run_json_command(runner: CommandRunner, command: str, code: str) -> list[di
 
 
 def _run_powershell(command: str) -> tuple[int, str, str]:
+    """Run PowerShell and return return code, stdout, and stderr."""
     completed = subprocess.run(
         ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", command],
         text=True,
@@ -134,6 +148,7 @@ def _run_powershell(command: str) -> tuple[int, str, str]:
 
 
 def _as_rows(payload: Any) -> list[dict[str, Any]]:
+    """Normalize PowerShell JSON output into a list of dictionary rows."""
     if payload is None:
         return []
     if isinstance(payload, dict):
@@ -144,6 +159,7 @@ def _as_rows(payload: Any) -> list[dict[str, Any]]:
 
 
 def _build_pid_map(rows: list[dict[str, Any]]) -> dict[int, dict[str, Any]]:
+    """Index process rows by PID so network rows can attach process names."""
     pid_map: dict[int, dict[str, Any]] = {}
     for row in rows:
         pid = _to_int(row.get("ProcessId"))
@@ -158,6 +174,7 @@ def _process_events(
     host_id: str,
     collected_at: datetime,
 ) -> list[dict[str, Any]]:
+    """Convert process snapshot rows into process_start events."""
     events: list[dict[str, Any]] = []
     for index, row in enumerate(rows, start=1):
         pid = _to_int(row.get("ProcessId"))
@@ -188,6 +205,7 @@ def _connection_events(
     host_id: str,
     collected_at: datetime,
 ) -> list[dict[str, Any]]:
+    """Convert TCP snapshot rows into network_connection events."""
     events: list[dict[str, Any]] = []
     for index, row in enumerate(rows, start=1):
         pid = _to_int(row.get("OwningProcess"))
@@ -217,6 +235,7 @@ def _connection_events(
 
 
 def _dns_events(rows: list[dict[str, Any]], host_id: str, collected_at: datetime) -> list[dict[str, Any]]:
+    """Convert DNS cache rows into dns_query events."""
     events: list[dict[str, Any]] = []
     for index, row in enumerate(rows, start=1):
         events.append(
@@ -239,6 +258,7 @@ def _dns_events(rows: list[dict[str, Any]], host_id: str, collected_at: datetime
 
 
 def _download_events(downloads_dir: Path, host_id: str, collected_at: datetime, lookback_hours: int) -> list[dict[str, Any]]:
+    """Convert recent executable-like downloads into file_download events."""
     if not downloads_dir.exists():
         return []
 
@@ -282,6 +302,7 @@ def _base_event(
     received_time: datetime,
     extra: dict[str, Any],
 ) -> dict[str, Any]:
+    """Build fields common to all locally collected event dictionaries."""
     return {
         "event_id": event_id,
         "event_time": event_time.isoformat(),
@@ -295,6 +316,7 @@ def _base_event(
 
 
 def _parse_windows_time(value: Any) -> datetime | None:
+    """Parse a Windows timestamp string into local time when possible."""
     if not value:
         return None
     if isinstance(value, str):
@@ -306,6 +328,7 @@ def _parse_windows_time(value: Any) -> datetime | None:
 
 
 def _to_int(value: Any) -> int | None:
+    """Coerce numeric-looking values into integers without raising."""
     try:
         if value is None or value == "":
             return None
@@ -315,6 +338,7 @@ def _to_int(value: Any) -> int | None:
 
 
 def _redact_user_path(value: str) -> str:
+    """Replace the current user's home path with a portable placeholder."""
     if not value:
         return ""
     home = str(Path.home())
@@ -322,6 +346,7 @@ def _redact_user_path(value: str) -> str:
 
 
 def _sha256_if_small(path: Path) -> str:
+    """Hash small files and skip large downloads to keep collection bounded."""
     if path.stat().st_size > 50_000_000:
         return ""
     digest = hashlib.sha256()

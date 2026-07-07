@@ -1,3 +1,5 @@
+"""Validate endpoint telemetry and produce alerts, incidents, and risk views."""
+
 from __future__ import annotations
 
 from collections import Counter, defaultdict
@@ -27,12 +29,18 @@ from .signature_db import load_signature_db
 
 
 class DetectionError(Exception):
+    """Carry a detector failure code plus any safe partial result."""
+
     def __init__(self, code: str, message: str, partial_result: dict[str, Any] | None = None) -> None:
+        """Store a stable error code, human message, and partial output."""
+
         super().__init__(message)
         self.code = code
         self.partial_result = partial_result or {}
 
 
+# Rule metadata gives each finding a stable contract for reports, MITRE
+# distribution, response planning, and dashboard severity labels.
 RULES = {
     "R001": {
         "name": "known malicious domain access",
@@ -103,6 +111,8 @@ RULES = {
 
 
 def analyze_events(raw_events: list[dict[str, Any]], input_meta: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Return the full detection result for raw endpoint event dictionaries."""
+
     input_meta = input_meta or {}
     signature_db = load_signature_db()
     valid_events, dlq_events, privacy_actions = _validate_and_sanitize(raw_events)
@@ -170,6 +180,8 @@ def build_failure_result(
     input_meta: dict[str, Any] | None = None,
     partial_result: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    """Return the standard failed-result payload used by callers and UI."""
+
     return {
         "status": "failed",
         "poc_name": POC_NAME,
@@ -187,6 +199,8 @@ def build_failure_result(
 
 
 def _validate_and_sanitize(raw_events: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
+    """Split raw input into valid events, DLQ records, and privacy actions."""
+
     valid_events: list[dict[str, Any]] = []
     dlq_events: list[dict[str, Any]] = []
     privacy_actions: list[dict[str, Any]] = []
@@ -223,6 +237,8 @@ def _validate_and_sanitize(raw_events: list[dict[str, Any]]) -> tuple[list[dict[
 
 
 def _schema_errors(event: dict[str, Any], seen_event_ids: set[str]) -> list[str]:
+    """Return schema and duplicate-ID errors for one sanitized event."""
+
     errors: list[str] = []
     missing = sorted(REQUIRED_EVENT_FIELDS - set(event))
     if missing:
@@ -247,6 +263,8 @@ def _schema_errors(event: dict[str, Any], seen_event_ids: set[str]) -> list[str]
 
 
 def _detect_alerts(events: list[dict[str, Any]], signature_db: dict[str, Any]) -> list[dict[str, Any]]:
+    """Run all rule helpers and return normalized alert dictionaries."""
+
     alerts: list[dict[str, Any]] = []
 
     # Event-type gates keep source-specific rules readable while still allowing
@@ -286,6 +304,8 @@ def _detect_alerts(events: list[dict[str, Any]], signature_db: dict[str, Any]) -
 
 
 def _maybe_add_domain_alert(alerts: list[dict[str, Any]], event: dict[str, Any], signature_db: dict[str, Any]) -> None:
+    """Append R001 when an event destination matches malicious indicators."""
+
     domain = _event_domain(event)
     ip = str(event.get("dst_ip") or event.get("destination_ip") or "")
     if domain in signature_db["malicious_domains"] or ip in signature_db["malicious_ips"]:
@@ -302,6 +322,8 @@ def _maybe_add_domain_alert(alerts: list[dict[str, Any]], event: dict[str, Any],
 
 
 def _maybe_add_download_alert(alerts: list[dict[str, Any]], event: dict[str, Any], signature_db: dict[str, Any]) -> None:
+    """Append R002 for executable downloads with suspicious provenance."""
+
     file_name = str(event.get("file_name") or event.get("file_path") or "").lower()
     source_domain = str(event.get("source_domain") or "")
     hash_value = str(event.get("hash_sha256") or "")
@@ -327,6 +349,8 @@ def _maybe_add_download_alert(alerts: list[dict[str, Any]], event: dict[str, Any
 
 
 def _maybe_add_unsigned_execution_alert(alerts: list[dict[str, Any]], event: dict[str, Any], signature_db: dict[str, Any]) -> None:
+    """Append R003 for unsigned execution from Downloads or malware hashes."""
+
     path = str(event.get("process_path") or "").lower()
     hash_value = str(event.get("hash_sha256") or "")
     signed = event.get("signed")
@@ -348,6 +372,8 @@ def _maybe_add_unsigned_execution_alert(alerts: list[dict[str, Any]], event: dic
 
 
 def _maybe_add_large_outbound_alert(alerts: list[dict[str, Any]], event: dict[str, Any]) -> None:
+    """Append R005 when outbound bytes exceed the configured threshold."""
+
     bytes_out = int(event.get("bytes_out") or event.get("byte_count_out") or 0)
     if bytes_out >= LARGE_OUTBOUND_BYTES:
         alerts.append(
@@ -367,6 +393,8 @@ def _maybe_add_large_outbound_alert(alerts: list[dict[str, Any]], event: dict[st
 
 
 def _maybe_add_rare_asn_alert(alerts: list[dict[str, Any]], event: dict[str, Any]) -> None:
+    """Append R006 for off-hours traffic to untrusted ASNs."""
+
     asn = str(event.get("destination_asn") or "")
     if asn and asn not in TRUSTED_ASNS and _is_off_hours(event["event_time"]):
         alerts.append(
@@ -386,6 +414,8 @@ def _maybe_add_rare_asn_alert(alerts: list[dict[str, Any]], event: dict[str, Any
 
 
 def _maybe_add_shell_network_alert(alerts: list[dict[str, Any]], event: dict[str, Any]) -> None:
+    """Append R007 when a shell process opens outbound network activity."""
+
     process_name = str(event.get("process_name") or "").lower()
     if process_name in SHELL_PROCESSES:
         alerts.append(
@@ -405,6 +435,8 @@ def _maybe_add_shell_network_alert(alerts: list[dict[str, Any]], event: dict[str
 
 
 def _maybe_add_vpn_abnormal_alert(alerts: list[dict[str, Any]], event: dict[str, Any]) -> None:
+    """Append R008 for VPN traffic combined with transfer or ASN risk."""
+
     bytes_out = int(event.get("bytes_out") or 0)
     rare_asn = str(event.get("destination_asn") or "") not in TRUSTED_ASNS
     if event.get("vpn_active") is True and (bytes_out >= LARGE_OUTBOUND_BYTES or rare_asn):
@@ -425,6 +457,8 @@ def _maybe_add_vpn_abnormal_alert(alerts: list[dict[str, Any]], event: dict[str,
 
 
 def _maybe_add_l7_url_alert(alerts: list[dict[str, Any]], event: dict[str, Any], signature_db: dict[str, Any]) -> None:
+    """Append R009 for decrypted HTTP requests matching URL policy."""
+
     url = str(event.get("url") or event.get("object_url") or "").lower()
     domain = _event_domain(event)
     category = str(event.get("url_category") or "").lower()
@@ -447,6 +481,8 @@ def _maybe_add_l7_url_alert(alerts: list[dict[str, Any]], event: dict[str, Any],
 
 
 def _maybe_add_application_action_alert(alerts: list[dict[str, Any]], event: dict[str, Any], signature_db: dict[str, Any]) -> None:
+    """Append R010 for risky app actions tied to malicious destinations."""
+
     app_name = str(event.get("app_name") or event.get("app_id") or "").lower()
     action = str(event.get("app_action") or "").lower()
     domain = _event_domain(event)
@@ -474,6 +510,8 @@ def _maybe_add_application_action_alert(alerts: list[dict[str, Any]], event: dic
 
 
 def _maybe_add_hash_signature_alert(alerts: list[dict[str, Any]], event: dict[str, Any], signature_db: dict[str, Any]) -> None:
+    """Append R011 when file or attachment hashes hit malware signatures."""
+
     hash_value = str(event.get("hash_sha256") or event.get("attachment_hash") or "").lower()
     if not hash_value or hash_value not in signature_db["malware_hashes"]:
         return
@@ -494,6 +532,8 @@ def _maybe_add_hash_signature_alert(alerts: list[dict[str, Any]], event: dict[st
 
 
 def _maybe_add_response_action_alert(alerts: list[dict[str, Any]], event: dict[str, Any]) -> None:
+    """Append R012 for planned, queued, or applied response-action events."""
+
     if str(event.get("status") or "") not in {"planned", "queued", "applied"}:
         return
     alerts.append(
@@ -513,6 +553,8 @@ def _maybe_add_response_action_alert(alerts: list[dict[str, Any]], event: dict[s
 
 
 def _maybe_add_ai_prediction_alert(alerts: list[dict[str, Any]], event: dict[str, Any]) -> None:
+    """Append R013 when model telemetry predicts high or critical risk."""
+
     if str(event.get("prediction") or "") not in {"high", "critical"}:
         return
     alerts.append(
@@ -532,6 +574,8 @@ def _maybe_add_ai_prediction_alert(alerts: list[dict[str, Any]], event: dict[str
 
 
 def _detect_beaconing(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Detect repeated host/process/destination intervals as C2 beaconing."""
+
     groups: dict[tuple[str, str, str], list[dict[str, Any]]] = defaultdict(list)
     for event in events:
         if event["event_type"] != "network_connection":
@@ -552,6 +596,8 @@ def _detect_beaconing(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
         ]
         if not intervals:
             continue
+        # Beaconing uses regularity, not only count: repeated intervals within
+        # tolerance reduce false positives from ordinary bursty connections.
         most_common_interval, count = Counter(intervals).most_common(1)[0]
         regular = sum(1 for interval in intervals if abs(interval - most_common_interval) <= BEACON_INTERVAL_TOLERANCE_SECONDS)
         if count >= 2 and regular >= BEACON_MIN_EVENTS - 1 and most_common_interval <= 120:
@@ -575,6 +621,8 @@ def _detect_beaconing(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 def _build_incidents(events: list[dict[str, Any]], alerts: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Correlate alert chains into host-level attack sequence incidents."""
+
     events_by_host: dict[str, list[dict[str, Any]]] = defaultdict(list)
     alerts_by_host: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for event in events:
@@ -663,6 +711,8 @@ def _build_incidents(events: list[dict[str, Any]], alerts: list[dict[str, Any]])
 
 
 def _find_related_execution(download: dict[str, Any], events: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """Find a process start that follows a download by hash or path."""
+
     download_time = _parse_time(download["event_time"])
     hash_value = download.get("hash_sha256")
     file_path = str(download.get("file_path") or "").lower()
@@ -680,6 +730,8 @@ def _find_related_execution(download: dict[str, Any], events: list[dict[str, Any
 
 
 def _find_alert(alerts: list[dict[str, Any]], rule_id: str) -> dict[str, Any] | None:
+    """Return the first alert for a rule ID, if present."""
+
     return next((alert for alert in alerts if alert["rule_id"] == rule_id), None)
 
 
@@ -688,6 +740,8 @@ def _build_endpoint_risk(
     alerts: list[dict[str, Any]],
     incidents: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
+    """Return per-host risk rows sorted by highest risk first."""
+
     hosts = sorted({event["host_id"] for event in events})
     incident_bonus = {incident["host_id"]: incident["risk_score"] for incident in incidents}
     rows: list[dict[str, Any]] = []
@@ -713,6 +767,8 @@ def _build_endpoint_risk(
 
 
 def _edr_state(endpoint_risk: list[dict[str, Any]]) -> dict[str, Any]:
+    """Return fleet-level EDR state from the highest endpoint risk score."""
+
     highest = max((int(row.get("risk_score", 0) or 0) for row in endpoint_risk), default=0)
     if highest >= 80:
         state = "RED"
@@ -732,6 +788,8 @@ def _edr_state(endpoint_risk: list[dict[str, Any]]) -> dict[str, Any]:
 
 
 def _build_mitre_distribution(alerts: list[dict[str, Any]], incidents: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Count MITRE tactics represented by alerts and incidents."""
+
     counts: Counter[str] = Counter()
     for alert in alerts:
         for tactic in alert["mitre_mapping"]:
@@ -743,6 +801,8 @@ def _build_mitre_distribution(alerts: list[dict[str, Any]], incidents: list[dict
 
 
 def _top_suspicious_domains(events: list[dict[str, Any]], alerts: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Return top domains from events that contributed to alerts."""
+
     alerted_event_ids = {event_id for alert in alerts for event_id in alert["event_ids"]}
     counter: Counter[str] = Counter()
     for event in events:
@@ -754,6 +814,8 @@ def _top_suspicious_domains(events: list[dict[str, Any]], alerts: list[dict[str,
 
 
 def _top_suspicious_ips(events: list[dict[str, Any]], alerts: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Return top destination IPs from events that contributed to alerts."""
+
     alerted_event_ids = {event_id for alert in alerts for event_id in alert["event_ids"]}
     counter: Counter[str] = Counter()
     for event in events:
@@ -765,6 +827,8 @@ def _top_suspicious_ips(events: list[dict[str, Any]], alerts: list[dict[str, Any
 
 
 def _build_process_trees(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Return process-start rows for endpoint process-tree inspection."""
+
     rows: list[dict[str, Any]] = []
     for event in events:
         if event["event_type"] != "process_start":
@@ -784,6 +848,8 @@ def _build_process_trees(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 def _event_summary(event: dict[str, Any]) -> dict[str, Any]:
+    """Return a compact event row for report and dashboard tables."""
+
     summary = {
         "event_id": event["event_id"],
         "event_time": event["event_time"],
@@ -816,6 +882,8 @@ def _alert(
     event: dict[str, Any],
     extra: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    """Build the shared alert payload from rule metadata and evidence."""
+
     rule = RULES[rule_id]
     payload = {
         "rule_id": rule_id,
@@ -836,6 +904,8 @@ def _alert(
 
 
 def _event_domain(event: dict[str, Any]) -> str:
+    """Extract a lowercase domain from direct fields or URL hostnames."""
+
     direct = str(event.get("query") or event.get("dst_domain") or event.get("source_domain") or event.get("sni") or "").lower()
     if direct:
         return direct
@@ -846,15 +916,21 @@ def _event_domain(event: dict[str, Any]) -> str:
 
 
 def _parse_time(value: str) -> datetime:
+    """Parse ISO timestamps, accepting a trailing Z as UTC."""
+
     return datetime.fromisoformat(value.replace("Z", "+00:00"))
 
 
 def _is_off_hours(value: str) -> bool:
+    """Return whether an event timestamp is outside 07:00-20:00."""
+
     hour = _parse_time(value).hour
     return hour < 7 or hour >= 20
 
 
 def _severity(score: int) -> str:
+    """Map detector risk scores to alert and endpoint severity labels."""
+
     if score >= 80:
         return "critical"
     if score >= 60:
@@ -865,6 +941,8 @@ def _severity(score: int) -> str:
 
 
 def _decision(endpoint_risk: list[dict[str, Any]], incidents: list[dict[str, Any]], dlq_events: list[dict[str, Any]]) -> str:
+    """Return the top-level review decision for the detection result."""
+
     if any(item["severity"] == "critical" for item in endpoint_risk) or incidents:
         return "needs_security_review"
     if dlq_events:

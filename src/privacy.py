@@ -1,3 +1,5 @@
+"""Remove or mask personal data before events enter detection logic."""
+
 from __future__ import annotations
 
 import re
@@ -11,6 +13,8 @@ KOREAN_RRN_RE = re.compile(r"\d{6}-?[1-4]\d{6}")
 
 
 def sanitize_event(event: dict[str, Any]) -> tuple[dict[str, Any], list[dict[str, str]]]:
+    """Return a sanitized event plus audit records for each masking action."""
+
     sanitized: dict[str, Any] = {}
     masks: list[dict[str, str]] = []
 
@@ -35,8 +39,9 @@ def sanitize_event(event: dict[str, Any]) -> tuple[dict[str, Any], list[dict[str
 
 
 def mask_text(value: str) -> tuple[str, bool]:
+    """Mask sensitive text patterns while preserving non-sensitive context."""
+
     masked = EMAIL_RE.sub("[redacted-email]", value)
     masked = PHONE_RE.sub("[redacted-phone]", masked)
     masked = KOREAN_RRN_RE.sub("[redacted-id]", masked)
     return masked, masked != value
-
