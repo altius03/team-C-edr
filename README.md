@@ -283,7 +283,13 @@ macOS에서는 `tcpdump` 기반 network metadata를 event schema로 바꿉니다
 ```bash
 python3 -m src.mac_agent --simulate
 sudo python3 -m src.mac_agent --iface en0 --duration 30
+python3 -m src.mac_agent --simulate --collector-url http://127.0.0.1:8080/v1/telemetry/events
 ```
+
+`--collector-url`이 loopback이 아닌 collector를 가리키면 `https://` URL과
+`--api-token` 또는 `LAYERTRACE_API_TOKEN`을 명시해야 합니다. Loopback HTTP는
+로컬 데모에서만 허용됩니다. 실제 `tcpdump` 캡처는 macOS BPF 권한이 없으면
+`tcpdump_failed` JSON 에러와 non-zero exit code로 실패합니다.
 
 백그라운드 실행용 LaunchAgent script도 있습니다.
 
@@ -291,6 +297,10 @@ sudo python3 -m src.mac_agent --iface en0 --duration 30
 bash scripts/install_mac_agent.sh
 bash scripts/uninstall_mac_agent.sh
 ```
+
+설치 script는 현재 사용자 권한으로 짧은 `tcpdump` preflight를 먼저 실행합니다.
+이미 별도 경로에서 캡처 권한을 검증한 경우에만 `SKIP_TCPDUMP_PREFLIGHT=1`로
+건너뛸 수 있습니다.
 
 담당 코드:
 

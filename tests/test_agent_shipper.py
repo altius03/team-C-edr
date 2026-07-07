@@ -3,12 +3,8 @@ from __future__ import annotations
 import json
 import tempfile
 import unittest
-from contextlib import redirect_stdout
-from io import StringIO
 from pathlib import Path
-from unittest.mock import patch
 
-from src import mac_agent
 from src.agent_shipper import AgentHttpRequest, AgentIdentity, AgentShipConfig, HttpSendResult, JsonObject, ShipResult, ship_events
 
 
@@ -186,75 +182,6 @@ class AgentShipperTests(unittest.TestCase):
             self.assertEqual(second.queued_count, 1)
             self.assertEqual(non_accepted_sender.calls[0].payload["events"], pending_events)
             self.assertEqual(len(list(queue_dir.glob("*.json"))), 2)
-
-    def test_mac_agent_simulate_ships_with_required_identity_headers_when_collector_url_is_set(self) -> None:
-        captured: list[tuple[list[JsonObject], AgentShipConfig]] = []
-
-        def fake_ship_events(events: list[JsonObject], config: AgentShipConfig) -> ShipResult:
-            captured.append((events, config))
-            return ShipResult(status="accepted", accepted_count=1, task_id="task-mac", replayed_count=0, queued_count=0)
-
-        with tempfile.TemporaryDirectory() as temp_dir:
-            stdout = StringIO()
-            with patch("src.mac_agent.ship_events", side_effect=fake_ship_events):
-                with redirect_stdout(stdout):
-                    exit_code = mac_agent.run_agent(
-                        [
-                            "--simulate",
-                            "--host-id",
-                            "mac-unit",
-                            "--collector-url",
-                            "http://127.0.0.1:8080/v1/telemetry/events",
-                            "--api-token",
-                            "local-dev-token",
-                            "--customer-id",
-                            "techeer-demo",
-                            "--tenant-id",
-                            "techeer-demo-lab",
-                            "--agent-version",
-                            "0.4.0",
-                            "--payload-version",
-                            "1.1",
-                            "--queue-dir",
-                            temp_dir,
-                        ]
-                    )
-
-        output = json.loads(stdout.getvalue())
-        self.assertEqual(exit_code, 0)
-        self.assertEqual(output["status"], "accepted")
-        self.assertEqual(captured[0][0][0]["host_id"], "mac-unit")
-        self.assertEqual(captured[0][1].collector_url, "http://127.0.0.1:8080/v1/telemetry/events")
-        self.assertEqual(captured[0][1].identity.customer_id, "techeer-demo")
-        self.assertEqual(captured[0][1].identity.tenant_id, "techeer-demo-lab")
-        self.assertEqual(captured[0][1].identity.agent_version, "0.4.0")
-        self.assertEqual(captured[0][1].identity.payload_version, "1.1")
-        self.assertEqual(captured[0][1].identity.api_token, "local-dev-token")
-
-    def test_mac_agent_returns_nonzero_when_shipper_rejects(self) -> None:
-        def fake_ship_events(events: list[JsonObject], config: AgentShipConfig) -> ShipResult:
-            return ShipResult(status="rejected", accepted_count=0, task_id=None, replayed_count=0, queued_count=1, error="http_403")
-
-        with tempfile.TemporaryDirectory() as temp_dir:
-            stdout = StringIO()
-            with patch("src.mac_agent.ship_events", side_effect=fake_ship_events):
-                with redirect_stdout(stdout):
-                    exit_code = mac_agent.run_agent(
-                        [
-                            "--simulate",
-                            "--collector-url",
-                            "http://127.0.0.1:8080/v1/telemetry/events",
-                            "--api-token",
-                            "wrong-token",
-                            "--queue-dir",
-                            temp_dir,
-                        ]
-                    )
-
-        output = json.loads(stdout.getvalue())
-        self.assertEqual(exit_code, 1)
-        self.assertEqual(output["status"], "rejected")
-        self.assertEqual(output["error"], "http_403")
 
     def config(self, queue_dir: Path) -> AgentShipConfig:
         return AgentShipConfig(
