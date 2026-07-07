@@ -3,7 +3,7 @@ import { createRoot } from "react-dom/client";
 import { App } from "./App";
 import "./styles.css";
 
-// Fail fast when the static HTML shell is missing the mount point Vite expects.
+// 정적 HTML 셸에 Vite가 기대하는 마운트 지점이 없으면 즉시 실패합니다.
 const root = document.getElementById("root");
 
 if (root === null) {

@@ -37,9 +37,9 @@ def main(argv: list[str] | None = None) -> int:
 
     input_meta: dict[str, Any] = {}
     try:
-        # Only one primary source feeds the first event set: either live local
-        # metadata collection or a sample event file. Optional PCAP/L7 sources
-        # are merged later so downstream analysis sees one normalized stream.
+        # 첫 이벤트 집합에는 실시간 로컬 메타데이터 수집 또는 샘플 이벤트 파일 중
+        # 하나의 주요 출처만 들어갑니다. 선택 PCAP/L7 출처는 나중에
+        # 합쳐 하위 분석이 하나의 정규화 흐름만 보게 합니다.
         if args.collect_local:
             raw_events, input_meta = collect_local_events(
                 lookback_hours=args.lookback_hours,
@@ -50,8 +50,8 @@ def main(argv: list[str] | None = None) -> int:
         else:
             events_path = _resolve_events_path(args.events_file)
             raw_events, input_meta = load_events(events_path)
-        # Optional PCAP/L7 inputs are appended here so the detection engine always
-        # receives one normalized event stream regardless of collection source.
+        # 선택 PCAP/L7 입력은 여기서 추가해 수집 출처와 관계없이
+        # 탐지 엔진이 항상 하나의 정규화 이벤트 흐름을 받게 합니다.
         raw_events, input_meta = _extend_with_optional_sources(
             raw_events,
             input_meta,

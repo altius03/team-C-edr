@@ -58,8 +58,8 @@ def build_pipeline_bundle(payload: dict[str, Any], *, ship_url: str | None = Non
 def _pipeline_payload(payload: dict[str, Any]) -> dict[str, Any]:
     """Select the review-safe subset of detector output for the bundle."""
 
-    # The shippable bundle intentionally excludes raw events and DLQ payloads;
-    # reviewers can audit detections without publishing high-volume telemetry.
+    # 전송 가능한 묶음은 원본 이벤트와 DLQ 페이로드를 의도적으로 제외합니다.
+    # 검토자는 대용량 텔레메트리를 배포하지 않고도 탐지를 감사할 수 있습니다.
     return {
         "status": payload.get("status"),
         "generated_at": payload.get("generated_at"),

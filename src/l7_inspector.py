@@ -55,8 +55,8 @@ def events_from_l7_records(records: list[dict[str, Any]], *, default_host: str =
         record_type = str(record.get("record_type") or record.get("type") or "http_request")
         event_time = _time(record.get("event_time"), base_time + timedelta(seconds=index))
         host_id = str(record.get("host_id") or default_host)
-        # Common fields keep the L7 source compatible with the detector's event
-        # contract before variant-specific HTTP/TLS/application fields are added.
+        # 공통 필드는 HTTP/TLS/애플리케이션별 필드를 추가하기 전에 L7 출처가
+        # 탐지기의 이벤트 계약과 호환되도록 유지합니다.
         common = {
             "event_id": str(record.get("event_id") or f"l7-{index:03d}"),
             "event_time": event_time.isoformat(),

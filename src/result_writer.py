@@ -30,8 +30,8 @@ def write_result(payload: JsonObject) -> dict[str, Path]:
     report_run_dir = REPORT_RUNS_DIR / run_dir.name
 
     payload = dict(payload)
-    # Result metadata is injected before writing any artifact so JSON,
-    # dashboard data, and reports all point to the same generated paths.
+    # JSON, 대시보드 데이터, 보고서가 모두 같은 생성 경로를 가리키도록
+    # 어떤 산출물이든 쓰기 전에 결과 메타데이터를 주입합니다.
     dashboard_paths = {
         "react_data_path": WEB_DASHBOARD_JSON_PATH,
     }
@@ -105,7 +105,7 @@ def _repo_safe_path(value: str) -> str:
     if not path.is_absolute():
         return value
     try:
-        # Dashboard/report metadata should stay portable after the repo is cloned.
+        # 대시보드/보고서 메타데이터는 저장소를 복제한 뒤에도 이식 가능해야 합니다.
         return path.relative_to(BASE_DIR).as_posix()
     except ValueError:
         return value

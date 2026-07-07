@@ -28,7 +28,7 @@ def run_default_analysis_job(
     result["summary"]["predicted_high_or_critical_count"] = result["ai_predictions"]["high_or_critical_count"]
     result["pipeline_delivery"] = build_pipeline_bundle(result)
     written_paths = write_result(result)
-    # The service store persists the exact JSON payload produced for the CLI
-    # dashboard so API and local artifacts share one result contract.
+    # 서비스 저장소는 CLI 대시보드용으로 만든 정확한 JSON 페이로드를 저장해
+    # API와 로컬 산출물이 하나의 결과 계약을 공유하게 합니다.
     saved_payload = json.loads(written_paths["latest_path"].read_text(encoding="utf-8"))
     return store.save_run_result(saved_payload)

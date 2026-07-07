@@ -443,8 +443,8 @@ def _markdown_to_report_html(markdown: str) -> str:
     table_header_done = False
 
     for line in lines:
-        # The report generator only emits headings, tables, bullets, paragraphs,
-        # and inline code, so this small converter keeps the HTML artifact local.
+        # 보고서 생성기는 제목, 표, 글머리표, 문단, 인라인 코드만 내보내므로
+        # 이 작은 변환기로 HTML 산출물을 로컬에서 만듭니다.
         if line.startswith("# "):
             _close_lists(html_lines, in_ul, in_table)
             in_ul = False

@@ -14,8 +14,8 @@ from .config import (
 )
 
 
-# Fixed layers keep graph rendering stable across runs and separate endpoint,
-# tenant-boundary, and external-destination concepts.
+# 고정 계층은 실행마다 그래프 렌더링을 안정화하고 엔드포인트,
+# 테넌트 경계와 외부 목적지 개념을 분리합니다.
 TOPOLOGY_LAYERS = ["Endpoint", "Internal Zone", "External Destination"]
 
 
@@ -99,8 +99,8 @@ def _egress_topology(
 ) -> dict[str, Any]:
     """Build endpoint-to-destination graph data with alert-aware states."""
 
-    # The dashboard renders this as Endpoint fleet -> tenant boundary ->
-    # external destinations, so the topology keeps nodes and edges separate.
+    # 대시보드는 이를 엔드포인트 집합 -> 테넌트 경계 -> 외부 목적지로
+    # 렌더링하므로 토폴로지는 노드와 간선을 분리해서 유지합니다.
     alert_event_ids = {event_id for alert in alerts for event_id in alert.get("event_ids", [])}
     risk_by_host = {row["host_id"]: row for row in endpoint_risk}
     nodes: list[dict[str, Any]] = [

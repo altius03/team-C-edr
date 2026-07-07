@@ -7,8 +7,8 @@ from datetime import datetime
 from typing import Any
 
 
-# Rules with stronger C2, exfiltration, L7, or malware evidence raise the
-# deterministic PoC score more than weak standalone signals.
+# C2, 유출, L7, 악성코드 증거가 강한 규칙은 약한 단독 신호보다
+# 결정형 PoC 점수를 더 크게 올립니다.
 HIGH_VALUE_RULES = {"R004", "R005", "R008", "R009", "R010", "R011"}
 
 

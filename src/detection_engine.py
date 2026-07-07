@@ -39,8 +39,8 @@ class DetectionError(Exception):
         self.partial_result = partial_result or {}
 
 
-# Rule metadata gives each finding a stable contract for reports, MITRE
-# distribution, response planning, and dashboard severity labels.
+# 규칙 메타데이터는 각 판단 결과가 보고서, MITRE 분포, 대응 계획,
+# 대시보드 심각도 라벨에서 안정적인 계약을 갖게 합니다.
 RULES = {
     "R001": {
         "name": "known malicious domain access",
@@ -131,8 +131,8 @@ def analyze_events(raw_events: list[dict[str, Any]], input_meta: dict[str, Any] 
     mitre_distribution = _build_mitre_distribution(alerts, incidents)
     siem_analysis = build_siem_analysis(valid_events, alerts, incidents, endpoint_risk)
 
-    # This payload is the product contract consumed by reports, dashboard, and
-    # validation; keep new fields additive unless those consumers are updated.
+    # 이 페이로드는 보고서, 대시보드, 검증이 소비하는 제품 계약입니다.
+    # 해당 소비자를 함께 갱신하지 않는 한 새 필드는 추가형으로 유지합니다.
     result = {
         "status": "success",
         "poc_name": POC_NAME,
@@ -267,8 +267,8 @@ def _detect_alerts(events: list[dict[str, Any]], signature_db: dict[str, Any]) -
 
     alerts: list[dict[str, Any]] = []
 
-    # Event-type gates keep source-specific rules readable while still allowing
-    # one event to trigger multiple independent security findings.
+    # 이벤트 타입 조건은 출처별 규칙을 읽기 쉽게 유지하면서도
+    # 하나의 이벤트가 여러 독립 보안 판단 결과를 만들 수 있게 합니다.
     for event in events:
         event_type = event["event_type"]
         if event_type in {"dns_query", "network_connection", "file_download", "http_request", "application_action", "decryption_event"}:
@@ -596,8 +596,8 @@ def _detect_beaconing(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
         ]
         if not intervals:
             continue
-        # Beaconing uses regularity, not only count: repeated intervals within
-        # tolerance reduce false positives from ordinary bursty connections.
+        # 비컨 탐지는 개수뿐 아니라 규칙성을 사용합니다.
+        # 허용 오차 안의 반복 간격은 일반적인 순간 집중 연결의 오탐을 줄입니다.
         most_common_interval, count = Counter(intervals).most_common(1)[0]
         regular = sum(1 for interval in intervals if abs(interval - most_common_interval) <= BEACON_INTERVAL_TOLERANCE_SECONDS)
         if count >= 2 and regular >= BEACON_MIN_EVENTS - 1 and most_common_interval <= 120:

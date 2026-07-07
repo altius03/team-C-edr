@@ -145,7 +145,7 @@ class IncidentAlertRow(Base):
     incident_id: Mapped[str] = mapped_column(String(128), primary_key=True)
     alert_id: Mapped[str] = mapped_column(String(128), primary_key=True)
 
-# Lookup indexes mirror the REST and dashboard query paths.
+# 조회 인덱스는 REST와 대시보드 쿼리 경로를 반영합니다.
 Index("idx_events_host_type", EventRow.host_id, EventRow.event_type)
 Index("idx_alerts_host_severity", AlertRow.host_id, AlertRow.severity)
 Index("idx_incidents_severity", IncidentRow.severity)

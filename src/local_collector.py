@@ -40,8 +40,8 @@ def collect_local_events(
     runner = command_runner or _run_powershell
     warnings: list[dict[str, str]] = []
 
-    # Raw PowerShell rows are collected first, then converted into the same
-    # event dictionary shape used by sample, PCAP, and L7 inputs.
+    # 원본 PowerShell 행을 먼저 수집한 뒤 샘플, PCAP, L7 입력과 같은
+    # 이벤트 딕셔너리 형태로 변환합니다.
     processes = _safe_collect("process_snapshot", _collect_process_rows, runner, warnings)
     connections = _safe_collect("tcp_connections", _collect_tcp_rows, runner, warnings)
     dns_rows: list[dict[str, Any]] = []

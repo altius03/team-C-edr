@@ -1,5 +1,5 @@
 :root {
-  /* Design tokens keep the React dashboard visually consistent across every panel. */
+  /* 디자인 토큰은 모든 패널에서 React 대시보드의 시각 일관성을 유지합니다. */
   color-scheme: dark;
   --bg: #101215;
   --shell: #0d0f12;
@@ -24,7 +24,7 @@
   box-sizing: border-box;
 }
 
-/* Base page rules set the operational console frame before component-specific styles. */
+/* 기본 페이지 규칙은 컴포넌트별 스타일보다 먼저 운영 콘솔 프레임을 잡습니다. */
 html {
   scroll-behavior: smooth;
 }
@@ -46,14 +46,14 @@ button {
   cursor: pointer;
 }
 
-/* The main shell is always navigation plus a dense investigation workspace. */
+/* 메인 셸은 항상 내비게이션과 밀도 높은 조사 작업공간으로 구성됩니다. */
 .app-shell {
   display: grid;
   grid-template-columns: 232px minmax(0, 1fr);
   min-height: 100dvh;
 }
 
-/* Sidebar navigation stays visible while reviewers move through alert and report sections. */
+/* 사이드바 내비게이션은 검토자가 알림과 보고서 구역을 이동하는 동안 계속 보입니다. */
 .sidebar {
   position: sticky;
   top: 0;
@@ -155,7 +155,7 @@ code {
   gap: 12px;
 }
 
-/* Topbar, filters, and KPI panels form the first scan path for a review session. */
+/* 상단바, 필터, KPI 패널은 검토 세션의 첫 번째 훑어보기 경로를 이룹니다. */
 .topbar {
   position: sticky;
   top: 0;

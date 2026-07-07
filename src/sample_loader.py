@@ -41,8 +41,8 @@ def load_events(path: Path) -> tuple[list[dict[str, Any]], dict[str, Any]]:
         generated_count = 0
     elif isinstance(payload, dict):
         events = list(payload.get("events", []))
-        # Generated flows are compact fixture specs; expand them before adding
-        # intentionally invalid rows so downstream validation sees one stream.
+        # 생성 흐름은 작은 fixture 명세이므로 의도적으로 잘못된 행을
+        # 추가하기 전에 펼쳐 하위 검증이 하나의 흐름을 보게 합니다.
         generated_events = _expand_generated_flows(payload.get("generated_flows", []))
         generated_count = len(generated_events)
         events.extend(generated_events)

@@ -7,8 +7,8 @@ from datetime import datetime
 from typing import Any
 
 
-# Rule-to-action mapping stays descriptive because this PoC must not mutate
-# firewall, endpoint, or identity state without an approved integration.
+# 승인된 연동 없이는 이 PoC가 방화벽, 엔드포인트, 식별자 상태를
+# 변경하면 안 되므로 규칙-대응 매핑은 설명형으로 유지합니다.
 ACTION_BY_RULE = {
     "R001": ("block_destination", "Block known malicious domain/IP at DNS or proxy policy."),
     "R002": ("quarantine_download", "Quarantine executable downloaded from suspicious source."),

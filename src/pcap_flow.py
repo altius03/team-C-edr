@@ -43,8 +43,8 @@ def events_from_pcap(path: Path, *, host_id: str = "pcap-endpoint") -> tuple[lis
     http_events: list[dict[str, Any]] = []
 
     for packet in packets:
-        # The flow key is direction-neutral; packet direction is recovered by
-        # comparing each packet endpoint with the first packet stored in state.
+        # 흐름 키는 방향 중립적입니다. 각 패킷 엔드포인트를 상태에 저장된
+        # 첫 패킷과 비교해 패킷 방향을 복원합니다.
         key = _flow_key(packet)
         flow = flows.get(key)
         if flow is None:

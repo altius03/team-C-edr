@@ -38,7 +38,7 @@ import {
 type TimeRange = "last10m" | "last1h" | "last24h" | "all";
 type SeverityFilter = Severity | "all";
 
-// Shared filter literals keep select controls and scoping predicates on one contract.
+// 공유 필터 리터럴은 선택 컨트롤과 범위 조건을 같은 계약으로 묶습니다.
 const TIME_RANGES: readonly TimeRange[] = ["last10m", "last1h", "last24h", "all"];
 const TIME_RANGE_LABELS: Readonly<Record<TimeRange, string>> = {
   last10m: "Last 10m",
@@ -49,7 +49,7 @@ const TIME_RANGE_LABELS: Readonly<Record<TimeRange, string>> = {
 
 const SEVERITIES: readonly Severity[] = ["critical", "warning", "suspicious", "info"];
 
-// Coordinates dashboard state, filters, and panel data for the main React view.
+// 메인 React 화면의 대시보드 상태, 필터, 패널 데이터를 조율합니다.
 export function App() {
   const [result, setResult] = useState<DashboardResult>(() => emptyDashboardResult());
   const [timeRange, setTimeRange] = useState<TimeRange>("last24h");
@@ -67,7 +67,7 @@ export function App() {
     return () => controller.abort();
   }, []);
 
-  // Every panel derives its rows from the same normalized filters to avoid split views.
+  // 모든 패널은 화면이 갈라지지 않도록 같은 정규화 필터에서 행을 만듭니다.
   const latestObservedAt = useMemo(() => latestObservedTime(result), [result]);
   const hostOptions = useMemo(() => buildHostOptions(result), [result]);
   const query = search.trim().toLowerCase();
@@ -292,7 +292,7 @@ export function App() {
   );
 }
 
-// Scope predicates centralize dashboard filtering while preserving each panel's row shape.
+// 범위 조건은 각 패널의 행 형태를 유지하면서 대시보드 필터링을 한곳에 모읍니다.
 function matchesAlertScope(
   alert: Alert,
   hostFilter: string,
@@ -309,7 +309,7 @@ function matchesAlertScope(
   return includesQuery(haystack, query);
 }
 
-// Checks whether a telemetry event matches host, search, and time filters.
+// 텔레메트리 이벤트가 호스트, 검색어, 시간 필터에 맞는지 확인합니다.
 function matchesEventScope(event: EventRow, hostFilter: string, query: string, timeRange: TimeRange, latestObservedAt: Date | null): boolean {
   if (hostFilter !== "all" && event.hostId !== hostFilter) return false;
   if (!matchesTimeRange(event.eventTime, timeRange, latestObservedAt)) return false;
@@ -318,7 +318,7 @@ function matchesEventScope(event: EventRow, hostFilter: string, query: string, t
   return includesQuery(haystack, query);
 }
 
-// Checks whether an incident belongs in the current incident queue.
+// 인시던트가 현재 인시던트 큐에 포함되는지 확인합니다.
 function matchesIncidentScope(incident: Incident, hostFilter: string, severityFilter: SeverityFilter, query: string): boolean {
   if (hostFilter !== "all" && incident.hostId !== hostFilter) return false;
   if (severityFilter !== "all" && incident.severity !== severityFilter) return false;
@@ -334,7 +334,7 @@ function matchesIncidentScope(incident: Incident, hostFilter: string, severityFi
   return includesQuery(haystack, query);
 }
 
-// Filters timeline rows while keeping severity and host labels aligned.
+// 심각도와 호스트 라벨을 맞춘 채 타임라인 행을 필터링합니다.
 function matchesTimelineScope(
   item: TimelineItem,
   hostOptions: ReadonlyMap<string, string>,
@@ -351,7 +351,7 @@ function matchesTimelineScope(
   return includesQuery([item.host, item.stage, item.summary, item.severity].join(" "), query);
 }
 
-// Filters endpoint risk rows without dropping active hosts that have evidence.
+// 증거가 있는 활성 호스트를 누락하지 않으면서 엔드포인트 위험 행을 필터링합니다.
 function matchesEndpointRiskScope(
   row: EndpointRisk,
   hostFilter: string,
@@ -366,7 +366,7 @@ function matchesEndpointRiskScope(
   return includesQuery(haystack, query) || activeHostIds.has(row.hostId);
 }
 
-// Filters process-tree rows by host, search text, and time window.
+// 호스트, 검색어, 시간 창 기준으로 프로세스 트리 행을 필터링합니다.
 function matchesProcessScope(row: ProcessTreeRow, hostFilter: string, query: string, timeRange: TimeRange, latestObservedAt: Date | null): boolean {
   if (hostFilter !== "all" && row.hostId !== hostFilter) return false;
   if (!matchesTimeRange(row.eventTime, timeRange, latestObservedAt)) return false;
@@ -375,13 +375,13 @@ function matchesProcessScope(row: ProcessTreeRow, hostFilter: string, query: str
   return includesQuery(haystack, query);
 }
 
-// Filters DLQ rows by event id, error code, and validation messages.
+// 이벤트 ID, 오류 코드, 검증 메시지 기준으로 DLQ 행을 필터링합니다.
 function matchesDlqScope(row: DlqEvent, query: string): boolean {
   if (!query) return true;
   return includesQuery([row.eventId, row.code, row.errors.join(" ")].join(" "), query);
 }
 
-// Topology filtering keeps matching edges first, then preserves enough nodes for context.
+// 토폴로지 필터링은 일치하는 간선을 먼저 두고 맥락에 필요한 노드를 보존합니다.
 function scopeTopology(
   topology: DashboardResult["topology"],
   hostFilter: string,
@@ -414,7 +414,7 @@ function scopeTopology(
   };
 }
 
-// Relative time windows are anchored to the newest observed timestamp in the sample.
+// 상대 시간 창은 샘플에서 관측된 가장 최신 타임스탬프를 기준으로 삼습니다.
 function matchesTimeRange(value: string, timeRange: TimeRange, latestObservedAt: Date | null): boolean {
   if (timeRange === "all") return true;
   const date = new Date(value);
@@ -427,7 +427,7 @@ function matchesTimeRange(value: string, timeRange: TimeRange, latestObservedAt:
   return latestObservedAt.getTime() - date.getTime() <= ranges[timeRange];
 }
 
-// Counts alerts by severity for chart bars and filter buttons.
+// 차트 막대와 필터 버튼에 쓸 심각도별 알림 수를 계산합니다.
 function countSeverity(alerts: readonly Alert[]): Readonly<Record<Severity | "all", number>> {
   return {
     all: alerts.length,
@@ -438,7 +438,7 @@ function countSeverity(alerts: readonly Alert[]): Readonly<Record<Severity | "al
   };
 }
 
-// Finds the newest timestamp so sample-relative time filters behave consistently.
+// 샘플 기준 시간 필터가 일관되게 동작하도록 가장 최신 타임스탬프를 찾습니다.
 function latestObservedTime(result: DashboardResult): Date | null {
   const dates = [...result.events.map((event) => event.eventTime), ...result.alerts.map((alert) => alert.eventTime), ...result.timeline.map((item) => item.time)]
     .map((value) => new Date(value))
@@ -447,7 +447,7 @@ function latestObservedTime(result: DashboardResult): Date | null {
   return new Date(Math.max(...dates.map((value) => value.getTime())));
 }
 
-// Builds the host selector map from every panel data source.
+// 모든 패널 데이터 출처에서 호스트 선택기 맵을 만듭니다.
 function buildHostOptions(result: DashboardResult): ReadonlyMap<string, string> {
   const hosts = new Map<string, string>();
   for (const endpoint of result.endpointRisk) hosts.set(endpoint.hostId, endpoint.host);
@@ -460,7 +460,7 @@ function buildHostOptions(result: DashboardResult): ReadonlyMap<string, string> 
   return hosts;
 }
 
-// Signal cards summarize cross-layer coverage without changing the underlying counts.
+// 신호 카드는 기본 개수를 바꾸지 않고 계층 간 커버리지를 요약합니다.
 function buildSignals(result: DashboardResult) {
   const processEvents = result.events.filter((event) => event.eventType === "process_start").length;
   const networkEvents = result.events.filter((event) => event.eventType === "network_connection").length;
@@ -493,7 +493,7 @@ function buildSignals(result: DashboardResult) {
   ] as const;
 }
 
-// Normalizes select input text into a supported time-range value.
+// 선택 입력 텍스트를 지원되는 시간 범위 값으로 정규화합니다.
 function toTimeRange(value: string): TimeRange {
   switch (value) {
     case "last10m":
@@ -506,7 +506,7 @@ function toTimeRange(value: string): TimeRange {
   }
 }
 
-// Normalizes select input text into a supported severity filter.
+// 선택 입력 텍스트를 지원되는 심각도 필터로 정규화합니다.
 function toSeverityFilter(value: string): SeverityFilter {
   switch (value) {
     case "critical":
@@ -519,7 +519,7 @@ function toSeverityFilter(value: string): SeverityFilter {
   }
 }
 
-// Converts internal state tokens into display labels.
+// 내부 상태 토큰을 화면 표시 라벨로 변환합니다.
 function stateLabel(state: string): string {
   switch (state) {
     case "red":
@@ -533,12 +533,12 @@ function stateLabel(state: string): string {
   }
 }
 
-// Performs case-insensitive search matching for panel filters.
+// 패널 필터에 대소문자 구분 없는 검색 매칭을 수행합니다.
 function includesQuery(value: string, query: string): boolean {
   return value.toLowerCase().includes(query);
 }
 
-// Formats ISO timestamps for compact table and timeline labels.
+// 간결한 테이블과 타임라인 라벨에 맞게 ISO 타임스탬프를 포맷합니다.
 function formatTime(value: string): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
@@ -549,7 +549,7 @@ function formatTime(value: string): string {
   return `${month}-${day} ${hour}:${minute}`;
 }
 
-// Formats byte counts into readable units for dashboard tables.
+// 대시보드 테이블에 맞게 바이트 수를 읽기 쉬운 단위로 포맷합니다.
 function formatBytes(value: number): string {
   if (!value) return "-";
   if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)} MB`;

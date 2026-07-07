@@ -1,6 +1,6 @@
 {
   "compilerOptions": {
-    // Browser output targets Vite's modern ESM pipeline and DOM APIs used by React.
+    // 브라우저 출력은 Vite의 최신 ESM 파이프라인과 React가 쓰는 DOM API를 대상으로 합니다.
     "target": "ES2022",
     "useDefineForClassFields": true,
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
@@ -8,7 +8,7 @@
     "skipLibCheck": true,
     "esModuleInterop": true,
     "allowSyntheticDefaultImports": true,
-    // Strictness flags make adapter fallbacks explicit and prevent unsafe indexed reads.
+    // 엄격한 플래그로 어댑터 대체 동작을 명시하고 안전하지 않은 인덱스 읽기를 막습니다.
     "strict": true,
     "forceConsistentCasingInFileNames": true,
     "module": "ESNext",
@@ -22,7 +22,7 @@
     "verbatimModuleSyntax": true,
     "noFallthroughCasesInSwitch": true
   },
-  // Limit checking to the React dashboard source and leave generated/static outputs alone.
+  // 타입 검사는 React 대시보드 소스로 제한하고 생성/정적 출력은 그대로 둡니다.
   "include": ["web/src"],
   "references": []
 }

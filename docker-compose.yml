@@ -30,7 +30,7 @@ services:
       postgres:
         condition: service_healthy
 
-  # Worker shares the API image so jobs run against the same application code.
+  # 워커는 API 이미지와 같은 애플리케이션 코드를 사용합니다.
   worker:
     build:
       context: .
@@ -43,7 +43,7 @@ services:
       postgres:
         condition: service_healthy
 
-  # Frontend image serves the Vite build and targets the local API by default.
+  # 프론트엔드 이미지는 Vite 빌드를 서빙하고 기본적으로 로컬 API를 바라봅니다.
   frontend:
     build:
       context: .
@@ -57,5 +57,5 @@ services:
       - api
 
 volumes:
-  # Named volume keeps database state across compose restarts.
+  # 이름 있는 볼륨으로 compose 재시작 후에도 데이터베이스 상태를 유지합니다.
   postgres-data:

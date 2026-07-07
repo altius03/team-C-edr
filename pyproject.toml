@@ -1,11 +1,11 @@
 [project]
-# Minimal application metadata is enough for uv to install and run local services.
+# uv가 로컬 서비스를 설치하고 실행하는 데 필요한 최소 애플리케이션 메타데이터입니다.
 name = "security-edr-agent-parser"
 version = "0.1.0"
 description = "Offline lightweight EDR agent telemetry parser with rule-based detection and a static dashboard."
 requires-python = ">=3.11"
 
-# Runtime dependencies cover the FastAPI service, database access, validation, and ASGI serving.
+# 런타임 의존성은 FastAPI 서비스, DB 접근, 검증, ASGI 서빙까지 포함합니다.
 dependencies = [
   "fastapi>=0.115,<1.0",
   "psycopg[binary]>=3.2,<4.0",

@@ -114,7 +114,7 @@ Default compose deployment starts PostgreSQL, API, worker, and frontend only. Re
 
 ```powershell
 Copy-Item .env.example .env
-# Set POSTGRES_PASSWORD and LAYERTRACE_API_TOKEN in .env before starting.
+# 시작하기 전에 .env에서 POSTGRES_PASSWORD와 LAYERTRACE_API_TOKEN을 설정합니다.
 npm run local:up
 ```
 
