@@ -4,14 +4,21 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import socket
 import subprocess
 import sys
 import time
-import urllib.request
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
+
+if __package__ in {None, ""}:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from src.agent_shipper import AgentIdentity, AgentShipConfig, json_objects_from_dicts, ship_events
+from src.config import AGENT_VERSION, CUSTOMER_ID, OUTPUTS_DIR, PAYLOAD_VERSION, TENANT_ID
 
 
 TCPDUMP_RE = re.compile(
@@ -28,6 +35,13 @@ def run_agent(argv: list[str] | None = None) -> int:
     parser.add_argument("--duration", type=int, default=30)
     parser.add_argument("--bpf", default="tcp or udp")
     parser.add_argument("--simulate", action="store_true")
+    parser.add_argument("--api-token", default=os.environ.get("LAYERTRACE_API_TOKEN", "local-dev-token"))
+    parser.add_argument("--customer-id", default=CUSTOMER_ID)
+    parser.add_argument("--tenant-id", default=TENANT_ID)
+    parser.add_argument("--agent-version", default=AGENT_VERSION)
+    parser.add_argument("--payload-version", default=PAYLOAD_VERSION)
+    parser.add_argument("--queue-dir", default=str(OUTPUTS_DIR / "agent_queue"))
+    parser.add_argument("--timeout-seconds", type=float, default=8.0)
     args = parser.parse_args(argv)
 
     events = simulate_events(args.host_id) if args.simulate else capture_tcpdump_events(args.iface, args.host_id, args.duration, args.bpf)
@@ -38,7 +52,39 @@ def run_agent(argv: list[str] | None = None) -> int:
         "events": events,
     }
     if args.collector_url:
-        _post_json(args.collector_url, payload)
+        result = ship_events(
+            json_objects_from_dicts(events),
+            AgentShipConfig(
+                collector_url=args.collector_url,
+                identity=AgentIdentity(
+                    customer_id=args.customer_id,
+                    tenant_id=args.tenant_id,
+                    agent_version=args.agent_version,
+                    payload_version=args.payload_version,
+                    api_token=args.api_token,
+                ),
+                queue_dir=Path(args.queue_dir),
+                timeout_seconds=args.timeout_seconds,
+            ),
+        )
+        print(
+            json.dumps(
+                {
+                    "status": result.status,
+                    "accepted_count": result.accepted_count,
+                    "task_id": result.task_id,
+                    "replayed_count": result.replayed_count,
+                    "queued_count": result.queued_count,
+                    "error": result.error,
+                    "collected_count": len(events),
+                    "source": payload["source"],
+                    "queue_dir": str(Path(args.queue_dir)),
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return 0 if result.status in {"accepted", "queued"} else 1
     else:
         print(json.dumps(payload, ensure_ascii=False, indent=2))
     return 0
@@ -128,14 +174,6 @@ def _split_addr(value: str) -> tuple[str, int]:
         return host, int(port)
     except ValueError:
         return value, 0
-
-
-def _post_json(url: str, payload: dict[str, Any]) -> None:
-    """Post the serialized metadata payload to a collector endpoint."""
-    data = json.dumps(payload).encode("utf-8")
-    request = urllib.request.Request(url, data=data, method="POST", headers={"Content-Type": "application/json"})
-    with urllib.request.urlopen(request, timeout=8) as response:
-        response.read()
 
 
 if __name__ == "__main__":
