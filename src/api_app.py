@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import logging
 from dataclasses import dataclass
 from hmac import compare_digest
 from typing import Final
@@ -25,7 +26,9 @@ from .api_models import (
     TenantHeaders,
 )
 from .service_store import JsonObject, JsonValue, ServiceStore
-from .task_queue import LocalTaskRunner, TaskQueue
+from .task_queue import DatabaseTaskQueue, LocalTaskRunner, TaskQueue
+
+LOGGER = logging.getLogger(__name__)
 
 _INGEST_HEADER_PARAMETERS: Final[list[JsonObject]] = [
     {"name": "X-Customer-Id", "in": "header", "required": True, "schema": {"type": "string"}},
@@ -48,19 +51,14 @@ def create_app(
     task_queue: TaskQueue | None = None,
     settings: ApiSettings | None = None,
 ) -> FastAPI:
+    actual_settings = settings or _settings_from_env()
     actual_store = store or ServiceStore()
     actual_store.initialize()
-    actual_settings = settings or _settings_from_env()
-    actual_queue = task_queue or LocalTaskRunner(actual_store)
+    actual_queue = task_queue or _task_queue_from_settings(actual_store, actual_settings)
     app = FastAPI(title="LayerTrace EDR/SIEM REST API", version="0.5.0")
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=[
-            "http://127.0.0.1:5173",
-            "http://localhost:5173",
-            "http://127.0.0.1:4173",
-            "http://localhost:4173",
-        ],
+        allow_origins=actual_settings.cors_origins or _default_cors_origins(),
         allow_credentials=False,
         allow_methods=["GET", "POST"],
         allow_headers=["Authorization", "Content-Type", "X-Api-Token", "X-Agent-Version", "X-Customer-Id", "X-Payload-Version", "X-Tenant-Id"],
@@ -79,8 +77,8 @@ def create_app(
         return _json_error(code, str(exc.errors()[0].get("msg", "invalid request")), status.HTTP_400_BAD_REQUEST)
 
     @app.get("/v1/health", response_model=HealthResponse, tags=["health"])
-    def health() -> HealthResponse:
-        return HealthResponse()
+    def health(request: Request) -> HealthResponse:
+        return HealthResponse(storage=_store(request).storage_label, queue=_queue(request).queue_label)
 
     @app.get("/v1/dashboard/latest", response_model=DashboardResult, tags=["dashboard"])
     def dashboard_latest(request: Request) -> DashboardResult:
@@ -109,6 +107,15 @@ def create_app(
         headers = _tenant_headers(request)
         event_objects = [event for event in payload.events if isinstance(event, dict)]
         task = _queue(request).enqueue_analysis_job(events=event_objects, input_meta=_input_meta(headers))
+        LOGGER.info(
+            "accepted telemetry batch",
+            extra={
+                "task_id": task.task_id,
+                "accepted_count": len(event_objects),
+                "customer_id": headers.customer_id,
+                "tenant_id": headers.tenant_id,
+            },
+        )
         return IngestResponse(
             status="accepted",
             task_id=task.task_id,
@@ -138,7 +145,19 @@ def _settings_from_env() -> ApiSettings:
     return ApiSettings(
         require_api_token=_env_bool("LAYERTRACE_REQUIRE_API_TOKEN", True),
         api_token=os.environ.get("LAYERTRACE_API_TOKEN", "local-dev-token"),
+        cors_origins=_env_csv("LAYERTRACE_CORS_ORIGINS") or _default_cors_origins(),
+        task_runner=os.environ.get("LAYERTRACE_TASK_RUNNER", "local").strip().lower(),
     )
+
+
+def _task_queue_from_settings(store: ServiceStore, settings: ApiSettings) -> TaskQueue:
+    match settings.task_runner:
+        case "external":
+            return DatabaseTaskQueue(store)
+        case "local" | "":
+            return LocalTaskRunner(store)
+        case unknown:
+            raise ValueError(f"unsupported task runner: {unknown}")
 
 
 def _store(request: Request) -> ServiceStore:
@@ -225,6 +244,22 @@ def _env_bool(name: str, default: bool) -> bool:
     if value is None:
         return default
     return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _env_csv(name: str) -> list[str]:
+    value = os.environ.get(name, "")
+    return [item.strip() for item in value.split(",") if item.strip()]
+
+
+def _default_cors_origins() -> list[str]:
+    return [
+        "http://127.0.0.1:5173",
+        "http://localhost:5173",
+        "http://127.0.0.1:4173",
+        "http://localhost:4173",
+        "http://127.0.0.1:3000",
+        "http://localhost:3000",
+    ]
 
 
 def _validation_error_code(exc: RequestValidationError) -> str:

@@ -315,15 +315,15 @@ def _check_service_architecture() -> dict[str, Any]:
             store.complete_task(task.task_id, TaskStatus.SUCCEEDED, {"run_id": run_id})
             latest = store.get_latest_run()
             if not latest or latest.get("status") != "success":
-                failures.append("SQLite store did not persist the latest successful run")
+                failures.append("service store did not persist the latest successful run")
             if store.get_task(task.task_id).status != TaskStatus.SUCCEEDED:
                 failures.append("local queue did not persist the succeeded task state")
             if not store.list_incidents(severity="critical"):
-                failures.append("SQLite incident query did not return critical incidents")
+                failures.append("service incident query did not return critical incidents")
             if store.count_dlq_events() < 1:
-                failures.append("SQLite DLQ table did not persist rejected telemetry")
+                failures.append("service DLQ table did not persist rejected telemetry")
             if store.count_outbox_events() < 3:
-                failures.append("SQLite outbox_events table did not capture run/task events")
+                failures.append("service outbox_events table did not capture run/task events")
             failures.extend(_check_service_http_surface(create_service_server, store, events))
         finally:
             store.close()
@@ -331,7 +331,7 @@ def _check_service_architecture() -> dict[str, Any]:
     return {
         "name": "service_architecture",
         "status": "pass" if not failures else "fail",
-        "details": "SQLite store, local queue, and REST surface are functional." if not failures else failures,
+        "details": "Service store, local queue, and REST surface are functional." if not failures else failures,
     }
 
 
@@ -492,7 +492,7 @@ def _check_openapi_contract() -> dict[str, Any]:
                 "X-Customer-Id",
                 "X-Agent-Version",
                 "REST",
-                "sqlite",
+                "postgresql",
                 "local-runner",
             ):
                 if required not in text:
@@ -543,8 +543,8 @@ def _build_report(checks: list[dict[str, Any]], result: dict[str, Any]) -> dict[
             "gzip telemetry pipeline bundle",
             "static SIEM dashboard fed by latest CLI result",
             "React/TypeScript dashboard build with Vite runtime assets",
-            "SQLAlchemy SQLite service store for runs, events, alerts, incidents, DLQ events, tasks, and outbox events",
-            "TaskQueue interface with LocalTaskRunner for current local analysis jobs",
+            "SQLAlchemy PostgreSQL service store for runs, events, alerts, incidents, DLQ events, tasks, and outbox events",
+            "TaskQueue interface with LocalTaskRunner and external worker mode",
             "REST health, latest dashboard, and incident query endpoints",
             "Markdown and HTML report artifacts generated from latest result",
             "SIEM query findings and Endpoint Egress Topology",

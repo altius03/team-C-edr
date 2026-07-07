@@ -1,0 +1,14 @@
+.git
+.omo
+.venv
+node_modules
+dist
+outputs
+__pycache__
+.pytest_cache
+.ruff_cache
+*.pyc
+docs/erd-full.dbml
+docs/erd-full.mmd
+docs/erdcloud-import-core.sql
+docs/erdcloud-import.sql

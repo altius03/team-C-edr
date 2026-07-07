@@ -76,7 +76,7 @@ export function TopologyCanvas({
   const endpointNodes = nodes.filter((node) => node.layer.toLowerCase().includes("endpoint")).slice(0, 4);
   const externalNodes = nodes.filter((node) => node.layer.toLowerCase().includes("external")).slice(0, 5);
   const endpointPositions = positionNodes(endpointNodes, 150, 96, 328);
-  const externalPositions = positionNodes(externalNodes, 850, 96, 328);
+  const externalPositions = positionNodes(externalNodes, 800, 96, 328);
   const sourceLookup = new Map(endpointPositions.map((node) => [node.id, node]));
   const targetLookup = new Map(externalPositions.flatMap((node) => [[node.id, node], [node.label, node]]));
   const flows = edges.length ? edges.slice(0, 10) : [];
@@ -91,7 +91,7 @@ export function TopologyCanvas({
         </defs>
         <text className="lane-label" x="150" y="34" textAnchor="middle">Endpoint fleet</text>
         <text className="lane-label boundary-label" x="520" y="34" textAnchor="middle">Protected tenant boundary</text>
-        <text className="lane-label" x="850" y="34" textAnchor="middle">External destinations</text>
+        <text className="lane-label" x="800" y="34" textAnchor="middle">External destinations</text>
         <rect className="boundary-box" height="248" rx="10" width="180" x="430" y="86" />
         <line className="boundary-axis" x1="430" x2="610" y1="210" y2="210" />
         <text className="boundary-title" x="520" y="194" textAnchor="middle">Tenant SIEM</text>
@@ -590,7 +590,7 @@ function GraphNode({ node, side }: { readonly node: PositionedNode; readonly sid
     <g className={`graph-node ${node.state}`} transform={`translate(${node.x} ${node.y})`}>
       <circle className="node-ring" r="25" />
       <circle className="node-core" r="11" />
-      <text className="node-label" textAnchor={anchor} x={textX} y="2">{truncate(node.label, side === "left" ? 14 : 19)}</text>
+      <text className="node-label" textAnchor={anchor} x={textX} y="2">{node.label}</text>
       <text className="node-state" textAnchor={anchor} x={textX} y="18">{stateLabel(node.state)}</text>
     </g>
   );
@@ -669,8 +669,4 @@ function stateLabel(state: string): string {
   if (state === "alert") return "alert";
   if (state === "observed") return "observed";
   return "not detected";
-}
-
-function truncate(value: string, maxLength: number): string {
-  return value.length > maxLength ? `${value.slice(0, maxLength - 3)}...` : value;
 }

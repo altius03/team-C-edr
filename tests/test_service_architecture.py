@@ -11,10 +11,12 @@ PROJECT_DIR = Path(__file__).resolve().parents[1]
 if str(PROJECT_DIR) not in sys.path:
     sys.path.insert(0, str(PROJECT_DIR))
 
+from src.api_models import ApiSettings
 from src.sample_loader import load_events
 from src.service_api import create_service_server
 from src.service_store import ServiceStore, TaskStatus
 from src.service_worker import run_default_analysis_job
+from src.task_queue import DatabaseTaskQueue, TaskWorker
 
 
 class ServiceArchitectureTests(unittest.TestCase):
@@ -88,6 +90,49 @@ class ServiceArchitectureTests(unittest.TestCase):
             self.assertTrue(accepted["queued"])
             self.assertEqual(accepted["accepted_count"], len(events))
             self.assertEqual(task["status"], "succeeded")
+
+    def test_external_worker_queue_drains_pending_analysis_task(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            store = ServiceStore(Path(temp_dir) / "layertrace.sqlite3")
+            store.initialize()
+            events, meta = load_events(PROJECT_DIR / "samples" / "default_events.json")
+            task_queue = DatabaseTaskQueue(store)
+            server = create_service_server(
+                ("127.0.0.1", 0),
+                store,
+                task_queue=task_queue,
+                settings=ApiSettings(require_api_token=True, api_token="local-dev-token", task_runner="external"),
+            )
+            port = server.server_address[1]
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                health = _get_json(port, "/v1/health")
+                accepted = _post_json(
+                    port,
+                    "/v1/telemetry/events",
+                    {"events": events, "input_meta": meta},
+                    {
+                        "X-Customer-Id": "techeer-demo",
+                        "X-Tenant-Id": "techeer-demo-lab",
+                        "X-Agent-Version": "0.4.0",
+                        "X-Payload-Version": "1.1",
+                        "X-Api-Token": "local-dev-token",
+                    },
+                )
+                pending = _get_json(port, f"/v1/tasks/{accepted['task_id']}")
+                processed = TaskWorker(store).drain_once()
+                finished = _get_json(port, f"/v1/tasks/{accepted['task_id']}")
+            finally:
+                server.shutdown()
+                thread.join(timeout=5)
+                server.server_close()
+
+            self.assertEqual(health["queue"], "external-worker")
+            self.assertEqual(accepted["task_status"], "pending")
+            self.assertEqual(pending["status"], "pending")
+            self.assertEqual(processed, 1)
+            self.assertEqual(finished["status"], "succeeded")
 
 
 def _get_json(port: int, path: str) -> dict[str, object]:

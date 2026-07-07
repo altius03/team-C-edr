@@ -216,8 +216,6 @@ export function readDashboardResult(): DashboardResult {
 }
 
 export async function loadDashboardResult(signal: AbortSignal): Promise<DashboardResult> {
-  // Prefer the Django API in normal operation. Static artifacts remain as a
-  // fallback so the dashboard can still be reviewed from a built demo bundle.
   const apiResult = await fetchDashboardApi(signal);
   if (apiResult) return apiResult;
 
@@ -251,7 +249,7 @@ async function fetchDashboardApi(signal: AbortSignal): Promise<DashboardResult |
 }
 
 function apiBaseUrl(): string {
-  return String(import.meta.env.VITE_LAYERTRACE_API_BASE_URL ?? "").replace(/\/$/, "");
+  return String(import.meta.env.VITE_LAYERTRACE_API_BASE_URL ?? import.meta.env.VITE_API_BASE_URL ?? "").replace(/\/$/, "");
 }
 
 export function adaptResult(raw: unknown): DashboardResult {

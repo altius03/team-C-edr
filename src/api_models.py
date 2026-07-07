@@ -15,6 +15,8 @@ class ApiSettings(BaseModel):
 
     require_api_token: bool = True
     api_token: str = "local-dev-token"
+    cors_origins: list[str] = Field(default_factory=list)
+    task_runner: str = "local"
 
 
 class ErrorResponse(BaseModel):
@@ -39,7 +41,7 @@ class HealthResponse(BaseModel):
     status: str = "ok"
     transport: str = "REST"
     framework: str = "fastapi"
-    storage: str = "sqlite"
+    storage: str = "postgresql"
     queue: str = "local-runner"
 
 

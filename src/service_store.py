@@ -9,7 +9,7 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import NullPool
 
-from .config import SERVICE_DB_PATH
+from .config import DEFAULT_DATABASE_URL
 from .service_models import AlertRow, Base, DlqEventRow, EventRow, IncidentRow, OutboxEventRow, RunRow, TaskRow
 from .service_store_payloads import JsonObject, JsonValue, dump_json, load_json_object, new_id, now_iso, text_value
 from .service_store_rows import OutboxRecord, alert_rows, dlq_rows, event_rows, incident_rows, outbox_row
@@ -38,13 +38,25 @@ class QueuedTask:
 
 
 class ServiceStore:
-    def __init__(self, db_path: Path = SERVICE_DB_PATH) -> None:
-        self.db_path = db_path
+    def __init__(self, db_path: Path | None = None, *, database_url: str | None = None) -> None:
+        if db_path is not None and database_url is not None:
+            raise ValueError("db_path and database_url cannot both be set")
+        self.database_url = database_url or (_sqlite_url(db_path) if db_path is not None else DEFAULT_DATABASE_URL)
+        self._sqlite_path = db_path
         self._engine: Engine | None = None
         self._session_factory: sessionmaker[Session] | None = None
 
+    @property
+    def storage_label(self) -> str:
+        if self.database_url.startswith("sqlite"):
+            return "sqlite"
+        if self.database_url.startswith("postgresql"):
+            return "postgresql"
+        return "database"
+
     def initialize(self) -> None:
-        self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        if self._sqlite_path is not None:
+            self._sqlite_path.parent.mkdir(parents=True, exist_ok=True)
         Base.metadata.create_all(self._get_engine())
 
     def close(self) -> None:
@@ -231,12 +243,11 @@ class ServiceStore:
 
     def _get_engine(self) -> Engine:
         if self._engine is None:
-            self._engine = create_engine(
-                _sqlite_url(self.db_path),
-                connect_args={"check_same_thread": False},
-                future=True,
-                poolclass=NullPool,
-            )
+            engine_kwargs: dict[str, object] = {"future": True, "pool_pre_ping": True}
+            if self.storage_label == "sqlite":
+                engine_kwargs["connect_args"] = {"check_same_thread": False}
+                engine_kwargs["poolclass"] = NullPool
+            self._engine = create_engine(self.database_url, **engine_kwargs)
         return self._engine
 
     def _session(self) -> Session:

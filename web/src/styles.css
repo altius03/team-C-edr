@@ -29,7 +29,7 @@ html {
 
 body {
   margin: 0;
-  min-width: 320px;
+  min-width: 1024px;
   background: var(--bg);
   color: var(--text);
 }
@@ -469,7 +469,8 @@ code {
 .topology-svg {
   display: block;
   width: 100%;
-  min-width: 760px;
+  min-width: 0;
+  aspect-ratio: 1040 / 420;
   min-height: 380px;
   border: 1px solid var(--line-soft);
   border-radius: var(--radius);
@@ -645,7 +646,7 @@ code {
 .dlq-list,
 .process-tree-list,
 .response-list {
-  max-height: 390px;
+  max-height: 420px;
   overflow: auto;
   overscroll-behavior: contain;
 }
@@ -698,7 +699,8 @@ code {
   border-radius: 4px;
   background: var(--panel-2);
   color: var(--text);
-  padding: 8px;
+  min-width: 0;
+  padding: 8px 6px;
   text-align: left;
 }
 
@@ -709,8 +711,10 @@ code {
 
 .severity-buttons span {
   color: var(--muted);
-  font-size: 11px;
+  font-size: 10px;
+  line-height: 1.2;
   text-transform: uppercase;
+  white-space: nowrap;
 }
 
 .severity-buttons strong {
@@ -1281,52 +1285,6 @@ td {
 
   .signal-strip {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
-@media (max-width: 720px) {
-  .topbar {
-    position: static;
-    align-items: flex-start;
-    flex-direction: column;
-  }
-
-  .topbar-right {
-    justify-items: start;
-    min-width: 0;
-    width: 100%;
-  }
-
-  .toolbar {
-    position: static;
-    grid-template-columns: 1fr;
-  }
-
-  .kpi-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .signal-strip {
-    grid-template-columns: 1fr;
-  }
-
-  .sidebar {
-    padding: 14px 10px;
-  }
-
-  .nav-list {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .topology-svg {
-    min-height: 320px;
-  }
-
-  .edge-row,
-  .inspector-grid,
-  .severity-buttons,
-  .report-stat-grid {
-    grid-template-columns: 1fr;
   }
 }
 

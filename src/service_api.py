@@ -7,7 +7,9 @@ from typing import TypeAlias
 import uvicorn
 
 from .api_app import create_app
+from .api_models import ApiSettings
 from .service_store import ServiceStore
+from .task_queue import TaskQueue
 
 ServerAddress: TypeAlias = tuple[str, int]
 
@@ -15,13 +17,20 @@ ServerAddress: TypeAlias = tuple[str, int]
 class FastApiServiceServer(ThreadingMixIn):
     daemon_threads = True
 
-    def __init__(self, address: ServerAddress, store: ServiceStore) -> None:
+    def __init__(
+        self,
+        address: ServerAddress,
+        store: ServiceStore,
+        *,
+        task_queue: TaskQueue | None = None,
+        settings: ApiSettings | None = None,
+    ) -> None:
         self._socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self._socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self._socket.bind(address)
         self._socket.listen(socket.SOMAXCONN)
         self.server_address = self._socket.getsockname()
-        app = create_app(store)
+        app = create_app(store, task_queue=task_queue, settings=settings)
         self._server = uvicorn.Server(
             uvicorn.Config(
                 app,
@@ -45,5 +54,11 @@ class FastApiServiceServer(ThreadingMixIn):
             return
 
 
-def create_service_server(address: ServerAddress, store: ServiceStore) -> FastApiServiceServer:
-    return FastApiServiceServer(address, store)
+def create_service_server(
+    address: ServerAddress,
+    store: ServiceStore,
+    *,
+    task_queue: TaskQueue | None = None,
+    settings: ApiSettings | None = None,
+) -> FastApiServiceServer:
+    return FastApiServiceServer(address, store, task_queue=task_queue, settings=settings)

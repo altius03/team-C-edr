@@ -56,7 +56,7 @@ class DashboardContractTests(unittest.TestCase):
         self.assertIn("X-Customer-Id", text)
         self.assertIn("X-Agent-Version", text)
         self.assertIn("REST", text)
-        self.assertIn("sqlite", text)
+        self.assertIn("postgresql", text)
         self.assertNotIn("future_transport", text)
 
 

@@ -2,7 +2,7 @@
 
 이 문서는 현재 구현된 `security_edr_siem_poc` 기준의 ERD와 SA입니다.
 
-현재 PoC는 `outputs/latest/result.json`, `dashboard/data/latest-result.js`, `web/public/latest-result.json` artifact를 산출하고, REST service surface용 SQLite 저장소(`outputs/service/layertrace.sqlite3`)에 최신 run, incident, local task 상태를 저장합니다. 아래 ERD는 JSON artifact의 논리 모델과 현재 SQLite 물리 테이블을 함께 설명합니다.
+현재 PoC는 `outputs/latest/result.json`, `dashboard/data/latest-result.js`, `web/public/latest-result.json` artifact를 산출하고, REST service surface용 PostgreSQL 저장소에 최신 run, incident, task 상태를 저장합니다. 아래 ERD는 JSON artifact의 논리 모델과 현재 PostgreSQL 물리 테이블을 함께 설명합니다.
 
 ---
 
@@ -276,9 +276,9 @@ erDiagram
 
 ---
 
-## 4. 현재 SQLite 저장소
+## 4. 현재 PostgreSQL 저장소
 
-현재 SQLite는 dashboard 조회, incident 필터, task 상태, DLQ 확인, outbox 확장 경계를 위해 SQLAlchemy 모델로 관리합니다.
+현재 PostgreSQL은 dashboard 조회, incident 필터, task 상태, DLQ 확인, outbox 확장 경계를 위해 SQLAlchemy 모델로 관리합니다.
 
 | 테이블 | 주요 컬럼 | 용도 |
 |---|---|---|
@@ -287,7 +287,7 @@ erDiagram
 | `alerts` | `run_id`, `alert_id`, `rule_id`, `severity`, `risk_score`, `host_id`, `event_time`, `payload` | alert 조회/집계용 저장소 |
 | `incidents` | `run_id`, `incident_id`, `severity`, `risk_score`, `host_display_name`, `payload` | severity 필터가 가능한 incident 조회 |
 | `dlq_events` | `run_id`, `dlq_id`, `event_id`, `error_code`, `payload` | schema validation 실패 event 확인 |
-| `tasks` | `task_id`, `task_type`, `status`, `created_at`, `updated_at`, `payload`, `result`, `error` | local task runner 상태 |
+| `tasks` | `task_id`, `task_type`, `status`, `created_at`, `updated_at`, `payload`, `result`, `error` | local/external worker 상태 |
 | `outbox_events` | `outbox_id`, `event_type`, `aggregate_type`, `aggregate_id`, `status`, `created_at`, `payload` | event-driven 확장 경계 |
 
 `payload` 컬럼은 React dashboard와 report가 기대하는 현재 result JSON 계약을 보존합니다.
@@ -321,7 +321,7 @@ flowchart LR
     subgraph Output["Artifacts & Surfaces"]
         PIPELINE["pipeline.py\ngzip telemetry bundle\noptional REST ship"]
         RESULT["outputs/latest/result.json\noutputs/runs/{timestamp}/result.json"]
-        STORE["service_store.py\nSQLite runs/incidents/tasks"]
+        STORE["service_store.py\nPostgreSQL runs/incidents/tasks"]
         DASHDATA["dashboard/data/latest-result.js"]
         DASH["dashboard/index.html\nEDR/SIEM visual console"]
         REACTDATA["web/public/latest-result.json"]
@@ -414,8 +414,8 @@ sequenceDiagram
 | `src/pipeline.py` | gzip telemetry bundle 생성, optional REST ship | pipeline_delivery |
 | `src/report_builder.py` | HTML/Markdown 보고서 생성 | security_report.html, security_report.md |
 | `src/result_writer.py` | latest/run result 저장, dashboard data script 생성 | result.json, latest-result.js |
-| `src/service_store.py` | SQLite run/incident/task 저장 | `outputs/service/layertrace.sqlite3` |
-| `src/service_worker.py` | local worker job 실행 경계 | saved run_id |
+| `src/service_store.py` | PostgreSQL run/incident/task 저장 | `DATABASE_URL` |
+| `src/service_worker.py` | worker job 실행 경계 | saved run_id |
 | `src/service_api.py` | REST 조회/ingest endpoint | health, dashboard, incidents, reports, telemetry ingest |
 | `dashboard/*` | 사용자 화면 | topology graph, detection charts, alert explorer, report modal |
 | `web/*` | React/TypeScript 사용자 화면 | Vite build/preview dashboard |
@@ -472,7 +472,7 @@ X-Payload-Version: 1.1
 
 ## 10. 설계상 주의점
 
-- 현재 SQLite DB는 `runs`, `events`, `alerts`, `incidents`, `dlq_events`, `tasks`, `outbox_events`를 물리 저장합니다.
+- 현재 PostgreSQL DB는 `runs`, `events`, `alerts`, `incidents`, `dlq_events`, `tasks`, `outbox_events`를 물리 저장합니다.
 - `Alert.event_ids`는 현재 JSON 배열이지만 DB에서는 `ALERT_EVENT` join table로 분리하는 것이 맞습니다.
 - `Incident.detected_sequence`도 현재 JSON 배열이지만 DB에서는 `INCIDENT_STAGE`, `INCIDENT_STAGE_EVENT`로 분리하는 것이 맞습니다.
 - `DNS cache`는 Win32 process에서 파생되는 값이 아니라 별도 resolver/cache source입니다. correlation은 `host_id`, `process_name`, `domain`, `event_time` 기준입니다.
