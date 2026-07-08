@@ -8,28 +8,29 @@ import logging
 import os
 import sys
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from src.service_store import ServiceStore
 
 BASE_DIR = Path(__file__).resolve().parents[1]
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
-from src.config import DEFAULT_DATABASE_URL, DEFAULT_EVENTS_PATH, LATEST_OUTPUT_DIR
-from src.sample_loader import load_events
-from src.api_app import settings_from_env
-from src.service_api import create_service_server
-from src.service_store import ServiceStore
-from src.service_worker import run_default_analysis_job
-from src.task_queue import DatabaseTaskQueue, LocalTaskRunner
-
-
 def main() -> int:
     """Start the HTTP service with optional startup seeding for local validation."""
+    from src.api_app import settings_from_env
+    from src.config import DEFAULT_DATABASE_URL
+    from src.service_api import create_service_server
+    from src.service_store import ServiceStore
+    from src.task_queue import CeleryTaskQueue, DatabaseTaskQueue, LocalTaskRunner
+
     logging.basicConfig(level=os.environ.get("LAYERTRACE_LOG_LEVEL", "INFO"), format="%(asctime)s %(levelname)s %(name)s %(message)s")
     parser = argparse.ArgumentParser(description="Run the local LayerTrace FastAPI REST service.")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8080)
     parser.add_argument("--database-url", default=os.environ.get("DATABASE_URL") or os.environ.get("LAYERTRACE_DATABASE_URL") or DEFAULT_DATABASE_URL)
-    parser.add_argument("--task-runner", choices=["local", "external"], default=os.environ.get("LAYERTRACE_TASK_RUNNER", "local"))
+    parser.add_argument("--task-runner", choices=["local", "external", "celery"], default=os.environ.get("LAYERTRACE_TASK_RUNNER", "local"))
     parser.add_argument("--seed-sample", action="store_true", help="Run sample telemetry into the configured database before serving.")
     parser.add_argument("--no-seed-latest", action="store_true", help="Do not import outputs/latest/result.json on startup.")
     args = parser.parse_args()
@@ -38,7 +39,15 @@ def main() -> int:
     store.initialize()
     _seed_store(store, seed_latest=not args.no_seed_latest, seed_sample=args.seed_sample)
 
-    task_queue = DatabaseTaskQueue(store) if args.task_runner == "external" else LocalTaskRunner(store)
+    match args.task_runner:
+        case "celery":
+            task_queue = CeleryTaskQueue()
+        case "external":
+            task_queue = DatabaseTaskQueue(store)
+        case "local":
+            task_queue = LocalTaskRunner(store)
+        case unknown:
+            raise ValueError(f"unsupported task runner: {unknown}")
     settings = settings_from_env().model_copy(update={"task_runner": args.task_runner})
     server = create_service_server((args.host, args.port), store, task_queue=task_queue, settings=settings)
     print(f"LayerTrace FastAPI REST service listening on http://{args.host}:{args.port}")
@@ -56,6 +65,10 @@ def main() -> int:
 
 def _seed_store(store: ServiceStore, *, seed_latest: bool, seed_sample: bool) -> None:
     """Populate the store from the latest artifact or sample telemetry before serving."""
+    from src.config import DEFAULT_EVENTS_PATH, LATEST_OUTPUT_DIR
+    from src.sample_loader import load_events
+    from src.service_worker import run_default_analysis_job
+
     latest_result_path = LATEST_OUTPUT_DIR / "result.json"
     if seed_latest and latest_result_path.exists():
         payload = json.loads(latest_result_path.read_text(encoding="utf-8"))

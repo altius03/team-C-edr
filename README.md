@@ -6,7 +6,7 @@
 보안 위협을 탐지하고, MITRE ATT&CK 기준으로 분류한 뒤 대시보드와 보고서로 보여주는
 로컬 실행형 보안 개념 검증입니다.
 
-> Python 3.11+ · Node.js/npm 리액트 대시보드 · PostgreSQL 저장소 · Windows 로컬 메타데이터 수집 지원 · Docker Compose · 대시보드/보고서/OpenAPI 자동 생성
+> Python 3.11+ · Node.js/npm 리액트 대시보드 · PostgreSQL 저장소 · Redis Broker + Celery Worker · Windows 로컬 메타데이터 수집 지원 · Docker Compose · 대시보드/보고서/OpenAPI 자동 생성
 
 ---
 
@@ -17,16 +17,15 @@ PC 안에서 생기는 여러 보안 신호를 모아서
 미니 EDR + SIEM 플랫폼입니다.
 
 ```text
-샘플 / 로컬 엔드포인트 / PCAP / L7 메타데이터
--> 스키마 검증 / 실패 대기열(DLQ)
--> 개인정보 마스킹
--> 탐지 규칙
--> MITRE ATT&CK 매핑
--> 규칙 기반 위험 예측
--> 대응 계획
--> SIEM 질의 결과 / 엔드포인트 송신 토폴로지
--> PostgreSQL 저장소 / 워커 경계
--> React 대시보드 + 보고서 + gzip 파이프라인 묶음
+Endpoint Agents
+-> FastAPI /v1/telemetry/events
+-> Celery task 발행
+-> Redis Broker
+-> Celery Worker
+-> 기존 Analysis Pipeline 실행
+-> PostgreSQL 결과 저장소
+-> FastAPI Read APIs
+-> Vercel Dashboard
 ```
 
 ---
@@ -43,7 +42,11 @@ flowchart LR
     E["macOS 에이전트 PoC"]
   end
 
-  INPUT --> N["이벤트 정규화"]
+  INPUT --> APIINGEST["FastAPI /v1/telemetry/events"]
+  APIINGEST --> CELERY["Celery task 발행"]
+  CELERY --> REDIS["Redis Broker"]
+  REDIS --> WORKER["Celery Worker"]
+  WORKER --> N["이벤트 정규화"]
   N --> P["개인정보 정제"]
   P --> R["규칙 탐지 R001-R013"]
   R --> M["MITRE ATT&CK 매핑"]
@@ -51,10 +54,9 @@ flowchart LR
   M --> AI["호스트 위험도 예측"]
   X --> O["outputs/latest/result.json"]
   AI --> O
-  O --> DB["PostgreSQL 저장소"]
-  O --> REACT["web/ 리액트 대시보드"]
-  DB --> API["FastAPI /v1/dashboard/latest"]
-  API --> REACT
+  O --> DB["PostgreSQL 결과 저장소"]
+  DB --> API["FastAPI Read APIs"]
+  API --> VERCEL["Vercel Dashboard"]
   O --> REP["보안 보고서 HTML/Markdown"]
   O --> PIPE["텔레메트리 gzip 묶음"]
 ```
@@ -110,7 +112,7 @@ npm run build
 
 ## Docker Compose 실행
 
-Default compose deployment starts PostgreSQL, API, worker, and frontend only. Redpanda/Kafka is intentionally excluded until a real outbox publisher and consumer exist; any outbox rows remain stored in PostgreSQL and are not published by this stack.
+Default compose deployment starts PostgreSQL, Redis, API, Celery worker, and a local-only frontend preview. Production dashboard hosting is expected to be split to Vercel. Redis is used only as the Celery broker; final runs, events, alerts, incidents, DLQ rows, and outbox rows stay in PostgreSQL. RabbitMQ, Kafka, Redpanda, Celery beat, and monitoring stacks are intentionally excluded.
 
 ```powershell
 Copy-Item .env.example .env
@@ -128,6 +130,12 @@ npm run local:up
 | FastAPI 문서 | `http://localhost:8080/docs` |
 | OpenAPI JSON | `http://localhost:8080/openapi.json` |
 | 상태 확인 | `http://localhost:8080/v1/health` |
+
+Compose 기본 흐름은 다음과 같습니다.
+
+```text
+Endpoint Agents -> FastAPI /v1/telemetry/events -> Redis Broker -> Celery Worker -> PostgreSQL -> FastAPI Read APIs -> Vercel Dashboard
+```
 
 종료:
 
@@ -215,8 +223,8 @@ uv run python scripts\run_service.py --no-seed-latest
 | 엔드포인트 | 용도 |
 |---|---|
 | `GET /v1/health` | REST, PostgreSQL, 작업 실행기 상태 확인 |
-| `POST /v1/telemetry/events` | 텔레메트리 이벤트 묶음 수신 후 분석 작업 등록 |
-| `GET /v1/tasks/{task_id}` | 등록된 분석 작업의 상태, 결과, 오류 조회 |
+| `POST /v1/telemetry/events` | 텔레메트리 이벤트 묶음 수신 후 Celery 분석 작업 발행 |
+| `GET /v1/tasks/{task_id}` | legacy/local DB-backed 작업 상태, 결과, 오류 조회 |
 | `GET /v1/dashboard/latest` | PostgreSQL에 저장된 최신 대시보드 페이로드 조회 |
 | `GET /v1/incidents?severity=critical` | 인시던트 조회 및 심각도 필터 |
 | `GET /v1/reports/latest` | 최신 보고서 메타데이터와 브라우저 PDF 저장 방식 안내 |
@@ -407,6 +415,9 @@ team-C-edr/
 │   ├── report_builder.py   # Markdown/HTML 보고서
 │   ├── service_store.py    # PostgreSQL 실행/인시던트/작업 저장소
 │   ├── service_worker.py   # 분석 워커 로직
+│   ├── celery_app.py       # Celery 앱 / Redis broker 설정
+│   ├── celery_tasks.py     # Celery 분석 task
+│   ├── task_queue.py       # Celery queue + legacy/local fallback
 │   ├── service_api.py      # FastAPI REST API 서버 래퍼
 │   └── privacy.py          # 민감 필드 마스킹
 ├── web/
@@ -444,7 +455,8 @@ team-C-edr/
 | PCAP 포함 | `uv run python -m src.run --pcap-file samples\some_capture.pcap` |
 | 파이프라인 전송 테스트 | `uv run python -m src.run --ship-url http://127.0.0.1:9000/ingest` |
 | REST 서비스 실행 | `uv run python scripts\run_service.py --no-seed-latest` |
-| 외부 워커 1회 실행 | `uv run python scripts\run_worker.py --once` |
+| Celery 워커 실행 | `uv run celery -A src.celery_app:celery_app worker --loglevel=INFO --concurrency=1` |
+| legacy/local DB 워커 1회 실행 | `uv run python scripts\run_worker.py --once` |
 | 리액트 빌드 | `npm run build` |
 | 리액트 미리보기 | `npm run preview` |
 | Docker Compose 상태 확인 | `npm run local:status` |
@@ -475,7 +487,7 @@ team-C-edr/
 - MITRE ATT&CK 매핑은 규칙 기반 후보 매핑입니다.
 - 대시보드는 React/Vite 빌드입니다. 로그인과 실시간 스트리밍 서버는 없습니다.
 - 데이터베이스는 SQLAlchemy 기반 PostgreSQL 저장소입니다.
-- 큐는 PostgreSQL 작업 상태와 로컬/외부 워커 경계입니다. Redpanda/Kafka는 실제 outbox publisher와 consumer가 생기기 전까지 기본 Docker Compose 배포에서 제외됩니다.
+- 운영 큐는 Redis Broker + Celery Worker입니다. PostgreSQL `tasks` 테이블은 legacy/local 상태 추적 경계로만 남기며, RabbitMQ/Kafka/Redpanda는 기본 배포에 포함하지 않습니다.
 - macOS 패킷 캡처는 실제 Mac에서 sudo/tcpdump 권한 검증이 필요합니다.
 
 ---

@@ -12,6 +12,10 @@ from .service_worker import run_default_analysis_job
 LOGGER = logging.getLogger(__name__)
 
 
+class AnalysisTaskSender(Protocol):
+    def __call__(self, events: list[JsonObject], input_meta: JsonObject) -> str: ...
+
+
 @runtime_checkable
 class TaskQueue(Protocol):
     """Queue interface used by the REST API regardless of execution mode."""
@@ -44,6 +48,36 @@ class DatabaseTaskQueue:
         task = self._store.enqueue_task("analysis", {"events": events, "input_meta": input_meta})
         LOGGER.info("analysis task enqueued for external worker", extra={"task_id": task.task_id})
         return task
+
+
+class CeleryTaskQueue:
+    queue_label = "celery-redis"
+
+    def __init__(self, *, broker_url: str | None = None, task_sender: AnalysisTaskSender | None = None) -> None:
+        self._broker_url = broker_url
+        self._task_sender = task_sender or self._send_analysis_task
+
+    def enqueue_analysis_job(self, events: list[JsonObject], input_meta: JsonObject) -> QueuedTask:
+        task_id = self._task_sender(events, input_meta)
+        LOGGER.info("analysis task published to celery broker", extra={"task_id": task_id})
+        return QueuedTask(
+            task_id=task_id,
+            task_type="analysis",
+            status=TaskStatus.PENDING,
+            payload={"events": events, "input_meta": input_meta},
+            result=None,
+            error=None,
+        )
+
+    def _send_analysis_task(self, events: list[JsonObject], input_meta: JsonObject) -> str:
+        from .celery_tasks import run_analysis_task
+
+        if self._broker_url:
+            run_analysis_task.app.conf.broker_url = self._broker_url
+        async_result = run_analysis_task.apply_async(kwargs={"events": events, "input_meta": input_meta})
+        if async_result.id is None:
+            raise RuntimeError("Celery did not return a task id")
+        return async_result.id
 
 
 class LocalTaskRunner:

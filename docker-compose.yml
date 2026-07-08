@@ -13,15 +13,26 @@ services:
       timeout: 3s
       retries: 10
 
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
   api:
     build:
       context: .
       dockerfile: Dockerfile.api
     environment:
       DATABASE_URL: &database-url postgresql+psycopg://layertrace:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/layertrace
+      CELERY_BROKER_URL: &celery-broker-url redis://redis:6379/0
+      REDIS_URL: *celery-broker-url
       LAYERTRACE_API_TOKEN: ${LAYERTRACE_API_TOKEN:?Set LAYERTRACE_API_TOKEN in .env}
       LAYERTRACE_REQUIRE_API_TOKEN: "true"
-      LAYERTRACE_TASK_RUNNER: external
+      LAYERTRACE_TASK_RUNNER: celery
       LAYERTRACE_LOG_LEVEL: INFO
       LAYERTRACE_CORS_ORIGINS: http://localhost:3000,http://127.0.0.1:3000,http://localhost:4173,http://127.0.0.1:4173,http://localhost:5173,http://127.0.0.1:5173
     ports:
@@ -29,21 +40,25 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      redis:
+        condition: service_healthy
 
-  # 워커는 API 이미지와 같은 애플리케이션 코드를 사용합니다.
   worker:
     build:
       context: .
       dockerfile: Dockerfile.api
-    command: ["uv", "run", "python", "scripts/run_worker.py", "--poll-interval", "1"]
+    command: ["uv", "run", "celery", "-A", "src.celery_app:celery_app", "worker", "--loglevel=INFO", "--concurrency=1"]
     environment:
       DATABASE_URL: *database-url
+      CELERY_BROKER_URL: *celery-broker-url
+      REDIS_URL: *celery-broker-url
       LAYERTRACE_LOG_LEVEL: INFO
     depends_on:
       postgres:
         condition: service_healthy
+      redis:
+        condition: service_healthy
 
-  # 프론트엔드 이미지는 Vite 빌드를 서빙하고 기본적으로 로컬 API를 바라봅니다.
   frontend:
     build:
       context: .

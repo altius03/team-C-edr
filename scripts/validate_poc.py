@@ -531,7 +531,7 @@ def _build_report(checks: list[dict[str, Any]], result: dict[str, Any]) -> dict[
             "gzip telemetry pipeline bundle",
             "React/TypeScript dashboard fed by REST API and latest JSON fallback",
             "SQLAlchemy PostgreSQL service store for runs, events, alerts, incidents, DLQ events, tasks, and outbox events",
-            "TaskQueue interface with LocalTaskRunner and external worker mode",
+            "TaskQueue interface with Celery runner plus legacy local/external worker fallback",
             "REST health, latest dashboard, and incident query endpoints",
             "Markdown and HTML report artifacts generated from latest result",
             "SIEM query findings and Endpoint Egress Topology",

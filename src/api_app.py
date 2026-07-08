@@ -11,7 +11,7 @@ from .api_context import ApiError
 from .api_models import ApiSettings, ErrorResponse
 from .api_routes import ROUTERS
 from .service_store import ServiceStore
-from .task_queue import DatabaseTaskQueue, LocalTaskRunner, TaskQueue
+from .task_queue import CeleryTaskQueue, DatabaseTaskQueue, LocalTaskRunner, TaskQueue
 
 
 def create_app(
@@ -70,6 +70,8 @@ def settings_from_env() -> ApiSettings:
 
 def _task_queue_from_settings(store: ServiceStore, settings: ApiSettings) -> TaskQueue:
     match settings.task_runner:
+        case "celery":
+            return CeleryTaskQueue()
         case "external":
             return DatabaseTaskQueue(store)
         case "local" | "":
