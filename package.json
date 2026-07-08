@@ -10,6 +10,7 @@
     "typecheck": "tsc -b",
     "local:up": "docker compose up --build",
     "local:down": "docker compose down --remove-orphans",
+    "local:migrate": "docker compose run --rm migrate",
     "local:status": "docker compose ps"
   },
   "dependencies": {

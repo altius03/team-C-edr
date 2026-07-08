@@ -11,7 +11,12 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from .config import DEFAULT_DATABASE_URL
-from .service_models import Base, IncidentRow, RunRow, TaskRow
+from . import service_analysis_jobs
+from . import service_tasks
+from .schema_migrations import assert_service_schema
+from .service_analysis_jobs import AnalysisJobState
+from .service_models import Base, IncidentRow, RunRow
+from .service_tasks import TaskState
 from .service_store_counts import count_rows
 from .service_store_engine import create_store_engine
 from .service_store_payloads import JsonObject, JsonValue, dump_json, load_json_object, new_id, now_iso, text_value
@@ -55,7 +60,9 @@ class ServiceStore:
     def initialize(self) -> None:
         if self._sqlite_path is not None:
             self._sqlite_path.parent.mkdir(parents=True, exist_ok=True)
-        Base.metadata.create_all(self._get_engine())
+        engine = self._get_engine()
+        Base.metadata.create_all(engine)
+        assert_service_schema(engine)
 
     def close(self) -> None:
         if self._engine is None:
@@ -152,108 +159,76 @@ class ServiceStore:
         return self._count_rows("outbox_events")
 
     def enqueue_task(self, task_type: str, payload: JsonObject) -> QueuedTask:
-        """Persist a pending task and emit the matching outbox event."""
+        with self._session() as session:
+            with session.begin():
+                task = service_tasks.enqueue_task(session, task_type, payload, TaskStatus.PENDING.value)
+        return _queued_task(task)
 
+    def create_analysis_job(self, job_id: str, celery_task_id: str, input_meta: JsonObject) -> QueuedTask:
         task = QueuedTask(
-            task_id=new_id("task"),
-            task_type=task_type,
+            task_id=celery_task_id,
+            task_type="analysis",
             status=TaskStatus.PENDING,
-            payload=payload,
+            payload={"input_meta": input_meta},
             result=None,
             error=None,
         )
-        now = now_iso()
         with self._session() as session:
             with session.begin():
-                session.add(
-                    TaskRow(
-                        task_id=task.task_id,
-                        task_type=task.task_type,
-                        status=task.status.value,
-                        created_at=now,
-                        updated_at=now,
-                        payload=dump_json(task.payload),
-                        result=None,
-                        error=None,
-                    )
-                )
-                session.add(
-                    outbox_row(
-                        OutboxRecord(
-                            event_type="task.enqueued",
-                            aggregate_type="task",
-                            aggregate_id=task.task_id,
-                            payload={"task_id": task.task_id, "task_type": task.task_type},
-                        )
-                    )
+                service_analysis_jobs.create_analysis_job(
+                    session,
+                    job_id,
+                    celery_task_id,
+                    input_meta,
+                    TaskStatus.PENDING.value,
                 )
         return task
+
+    def set_analysis_job_task_id(self, job_id: str, celery_task_id: str) -> None:
+        with self._session() as session:
+            with session.begin():
+                service_analysis_jobs.set_analysis_job_task_id(session, job_id, celery_task_id)
+
+    def start_analysis_job(self, job_id: str) -> None:
+        with self._session() as session:
+            with session.begin():
+                service_analysis_jobs.start_analysis_job(session, job_id, TaskStatus.RUNNING.value)
+
+    def complete_analysis_job(self, job_id: str, run_id: str) -> None:
+        with self._session() as session:
+            with session.begin():
+                service_analysis_jobs.complete_analysis_job(session, job_id, run_id, TaskStatus.SUCCEEDED.value)
+
+    def fail_analysis_job(self, job_id: str, error: str) -> None:
+        with self._session() as session:
+            with session.begin():
+                service_analysis_jobs.fail_analysis_job(session, job_id, error, TaskStatus.FAILED.value)
 
     def claim_next_task(self) -> QueuedTask | None:
-        """Atomically move the oldest pending task to running state."""
-
         with self._session() as session:
             with session.begin():
-                row = session.scalars(
-                    select(TaskRow).where(TaskRow.status == TaskStatus.PENDING.value).order_by(TaskRow.created_at).limit(1)
-                ).first()
-                if row is None:
-                    return None
-                row.status = TaskStatus.RUNNING.value
-                row.updated_at = now_iso()
-                task = _queued_task(row, TaskStatus.RUNNING)
-        return task
+                task = service_tasks.claim_next_task(session, TaskStatus.PENDING.value, TaskStatus.RUNNING.value)
+        return _queued_task(task) if task is not None else None
 
     def complete_task(self, task_id: str, status: TaskStatus, result: JsonObject) -> None:
-        """Store task completion state, result JSON, and an outbox event."""
-
         with self._session() as session:
             with session.begin():
-                row = _require_task_row(session, task_id)
-                row.status = status.value
-                row.updated_at = now_iso()
-                row.result = dump_json(result)
-                row.error = None
-                session.add(
-                    outbox_row(
-                        OutboxRecord(
-                            event_type="task.completed",
-                            aggregate_type="task",
-                            aggregate_id=task_id,
-                            payload={"task_id": task_id, "status": status.value},
-                        )
-                    )
-                )
+                service_tasks.complete_task(session, task_id, status.value, result)
 
     def fail_task(self, task_id: str, error: str) -> None:
-        """Store task failure details and emit a failure outbox event."""
-
         with self._session() as session:
             with session.begin():
-                row = _require_task_row(session, task_id)
-                row.status = TaskStatus.FAILED.value
-                row.updated_at = now_iso()
-                row.result = None
-                row.error = error
-                session.add(
-                    outbox_row(
-                        OutboxRecord(
-                            event_type="task.failed",
-                            aggregate_type="task",
-                            aggregate_id=task_id,
-                            payload={"task_id": task_id, "status": TaskStatus.FAILED.value},
-                        )
-                    )
-                )
+                service_tasks.fail_task(session, task_id, TaskStatus.FAILED.value, error)
 
     def get_task(self, task_id: str) -> QueuedTask:
-        """Load one queued task by identifier or raise when it is absent."""
-
         with self._session() as session:
-            row = session.get(TaskRow, task_id)
-            if row is None:
+            task = service_tasks.task_by_id(session, task_id)
+            if task is not None:
+                return _queued_task(task)
+            job = service_analysis_jobs.analysis_job_by_task_id(session, task_id)
+            if job is None:
                 raise KeyError(task_id)
-            return _queued_task(row, TaskStatus(row.status))
+            return _queued_analysis_job(job)
 
     def _count_rows(self, table: str) -> int:
         with self._session() as session:
@@ -274,25 +249,25 @@ class ServiceStore:
         return self._session_factory()
 
 
-def _require_task_row(session: Session, task_id: str) -> TaskRow:
-    """Return a task row from an active session or raise KeyError."""
-
-    row = session.get(TaskRow, task_id)
-    if row is None:
-        raise KeyError(task_id)
-    return row
-
-
-def _queued_task(row: TaskRow, status: TaskStatus) -> QueuedTask:
-    """Map a persisted task row into the typed queue contract."""
-
+def _queued_analysis_job(job: AnalysisJobState) -> QueuedTask:
     return QueuedTask(
-        task_id=row.task_id,
-        task_type=row.task_type,
-        status=status,
-        payload=load_json_object(row.payload),
-        result=load_json_object(row.result) if row.result else None,
-        error=row.error,
+        task_id=job.task_id,
+        task_type="analysis",
+        status=TaskStatus(job.status),
+        payload=job.payload,
+        result=job.result,
+        error=job.error,
+    )
+
+
+def _queued_task(task: TaskState) -> QueuedTask:
+    return QueuedTask(
+        task_id=task.task_id,
+        task_type=task.task_type,
+        status=TaskStatus(task.status),
+        payload=task.payload,
+        result=task.result,
+        error=task.error,
     )
 
 

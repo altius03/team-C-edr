@@ -41,7 +41,7 @@ def main() -> int:
 
     match args.task_runner:
         case "celery":
-            task_queue = CeleryTaskQueue()
+            task_queue = CeleryTaskQueue(store=store)
         case "external":
             task_queue = DatabaseTaskQueue(store)
         case "local":

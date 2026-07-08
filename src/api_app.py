@@ -71,7 +71,7 @@ def settings_from_env() -> ApiSettings:
 def _task_queue_from_settings(store: ServiceStore, settings: ApiSettings) -> TaskQueue:
     match settings.task_runner:
         case "celery":
-            return CeleryTaskQueue()
+            return CeleryTaskQueue(store=store)
         case "external":
             return DatabaseTaskQueue(store)
         case "local" | "":

@@ -9,6 +9,14 @@ from src.service_store import ServiceStore
 PROJECT_DIR = Path(__file__).resolve().parents[1]
 
 
+def _pure_python_line_count(path: Path) -> int:
+    return sum(
+        1
+        for line in path.read_text(encoding="utf-8").splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    )
+
+
 class DeploymentContractTests(unittest.TestCase):
     """Check storage selection, compose topology, and viewport-scope decisions."""
 
@@ -64,6 +72,7 @@ class DeploymentContractTests(unittest.TestCase):
 
     def test_lineage_schema_change_has_postgres_migration_artifact(self) -> None:
         migration_path = PROJECT_DIR / "migrations" / "20260707_deployment_lineage.sql"
+        job_migration_path = PROJECT_DIR / "migrations" / "20260708_analysis_jobs.sql"
 
         self.assertTrue(migration_path.exists(), "deployment lineage schema changes need a Postgres migration file")
         migration = migration_path.read_text(encoding="utf-8")
@@ -76,6 +85,45 @@ class DeploymentContractTests(unittest.TestCase):
             "fk_incident_alerts_alert",
         ):
             self.assertIn(required, migration)
+        self.assertTrue(job_migration_path.exists(), "Celery job status tracking needs a Postgres migration file")
+        job_migration = job_migration_path.read_text(encoding="utf-8")
+        for required in (
+            "CREATE TABLE IF NOT EXISTS analysis_jobs",
+            "celery_task_id",
+            "run_id",
+            "CREATE INDEX IF NOT EXISTS idx_analysis_jobs_status",
+        ):
+            self.assertIn(required, job_migration)
+
+    def test_migration_and_validation_commands_are_exposed(self) -> None:
+        package = json.loads((PROJECT_DIR / "package.json").read_text(encoding="utf-8"))
+        readme = (PROJECT_DIR / "README.md").read_text(encoding="utf-8")
+        validate_poc = (PROJECT_DIR / "scripts" / "validate_poc.py").read_text(encoding="utf-8")
+        validate_modules = [
+            PROJECT_DIR / "scripts" / "validate_poc_checks.py",
+            PROJECT_DIR / "scripts" / "validate_poc_core_checks.py",
+            PROJECT_DIR / "scripts" / "validate_poc_service_checks.py",
+            PROJECT_DIR / "scripts" / "validate_poc_report_checks.py",
+            PROJECT_DIR / "scripts" / "validate_poc_paths.py",
+        ]
+
+        self.assertTrue((PROJECT_DIR / "scripts" / "migrate_postgres.py").exists())
+        self.assertIn("migrate:", (PROJECT_DIR / "docker-compose.yml").read_text(encoding="utf-8"))
+        self.assertIn('command: ["uv", "run", "python", "scripts/migrate_postgres.py"]', (PROJECT_DIR / "docker-compose.yml").read_text(encoding="utf-8"))
+        self.assertEqual(package["scripts"]["local:migrate"], "docker compose run --rm migrate")
+        self.assertIn("uv run python scripts/migrate_postgres.py", readme)
+        self.assertLess(validate_poc.count("def _check_"), 4)
+        self.assertIn("from scripts.validate_poc_checks", validate_poc)
+        for module in validate_modules:
+            self.assertTrue(module.exists(), f"missing split validation module: {module.name}")
+            self.assertLess(_pure_python_line_count(module), 250, f"{module.name} should stay focused")
+        for required_import in (
+            "validate_poc_core_checks",
+            "validate_poc_service_checks",
+            "validate_poc_report_checks",
+        ):
+            self.assertIn(required_import, (PROJECT_DIR / "scripts" / "validate_poc_checks.py").read_text(encoding="utf-8"))
+        self.assertLess(_pure_python_line_count(PROJECT_DIR / "src" / "service_store.py"), 250)
 
     def test_small_viewport_specific_surface_is_removed(self) -> None:
         """Ensure responsive-specific wording and CSS branches stay out of this PoC."""

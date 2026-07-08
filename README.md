@@ -120,7 +120,15 @@ Copy-Item .env.example .env
 npm run local:up
 ```
 
-기존 PostgreSQL 데이터베이스에 이번 lineage schema를 적용할 때는 배포 전에 `migrations/20260707_deployment_lineage.sql`을 실행합니다. 새 데이터베이스는 서비스 시작 시 SQLAlchemy 모델에서 동일한 테이블과 FK를 생성합니다.
+기존 PostgreSQL named volume이나 운영 데이터베이스가 예전 schema라면 서비스 기동 전에 migration을 명시적으로 적용합니다. 이 명령은 `DATABASE_URL` 또는 `LAYERTRACE_DATABASE_URL`을 사용하고, lineage 컬럼과 Celery `analysis_jobs` 상태 테이블을 PostgreSQL에 보강합니다.
+
+```powershell
+uv run python scripts/migrate_postgres.py
+# 또는
+npm run local:migrate
+```
+
+새 데이터베이스는 서비스 시작 시 SQLAlchemy 모델에서 동일한 테이블과 FK를 생성합니다. 시작 preflight에서 필수 컬럼이 없으면 migration 실행이 필요하다는 오류가 납니다.
 
 접속 주소:
 
@@ -224,7 +232,7 @@ uv run python scripts\run_service.py --no-seed-latest
 |---|---|
 | `GET /v1/health` | REST, PostgreSQL, 작업 실행기 상태 확인 |
 | `POST /v1/telemetry/events` | 텔레메트리 이벤트 묶음 수신 후 Celery 분석 작업 발행 |
-| `GET /v1/tasks/{task_id}` | legacy/local DB-backed 작업 상태, 결과, 오류 조회 |
+| `GET /v1/tasks/{task_id}` | PostgreSQL에 저장된 Celery `analysis_jobs` 또는 legacy/local `tasks` 상태, 결과, 오류 조회 |
 | `GET /v1/dashboard/latest` | PostgreSQL에 저장된 최신 대시보드 페이로드 조회 |
 | `GET /v1/incidents?severity=critical` | 인시던트 조회 및 심각도 필터 |
 | `GET /v1/reports/latest` | 최신 보고서 메타데이터와 브라우저 PDF 저장 방식 안내 |
@@ -487,7 +495,7 @@ team-C-edr/
 - MITRE ATT&CK 매핑은 규칙 기반 후보 매핑입니다.
 - 대시보드는 React/Vite 빌드입니다. 로그인과 실시간 스트리밍 서버는 없습니다.
 - 데이터베이스는 SQLAlchemy 기반 PostgreSQL 저장소입니다.
-- 운영 큐는 Redis Broker + Celery Worker입니다. PostgreSQL `tasks` 테이블은 legacy/local 상태 추적 경계로만 남기며, RabbitMQ/Kafka/Redpanda는 기본 배포에 포함하지 않습니다.
+- 운영 큐는 Redis Broker + Celery Worker입니다. Celery task 상태는 PostgreSQL `analysis_jobs`에 남기고, `tasks` 테이블은 legacy/local fallback 상태 추적 경계로만 남깁니다. RabbitMQ/Kafka/Redpanda는 기본 배포에 포함하지 않습니다.
 - macOS 패킷 캡처는 실제 Mac에서 sudo/tcpdump 권한 검증이 필요합니다.
 
 ---

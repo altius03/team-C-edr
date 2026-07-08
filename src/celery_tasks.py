@@ -13,11 +13,24 @@ def database_url_from_env() -> str:
 
 
 @celery_app.task(name="layertrace.analysis.run")
-def run_analysis_task(events: list[JsonObject], input_meta: JsonObject, database_url: str | None = None) -> JsonObject:
+def run_analysis_task(
+    events: list[JsonObject],
+    input_meta: JsonObject,
+    job_id: str | None = None,
+    database_url: str | None = None,
+) -> JsonObject:
     store = ServiceStore(database_url=database_url or database_url_from_env())
     try:
         store.initialize()
+        if job_id is not None:
+            store.start_analysis_job(job_id)
         run_id = run_default_analysis_job(store, events=events, input_meta=input_meta)
+        if job_id is not None:
+            store.complete_analysis_job(job_id, run_id)
         return {"status": TaskStatus.SUCCEEDED.value, "run_id": run_id}
+    except Exception as exc:  # noqa: BROAD_EXCEPT_OK
+        if job_id is not None:
+            store.fail_analysis_job(job_id, str(exc))
+        raise
     finally:
         store.close()

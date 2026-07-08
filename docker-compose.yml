@@ -59,6 +59,19 @@ services:
       redis:
         condition: service_healthy
 
+  migrate:
+    profiles: ["tools"]
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    command: ["uv", "run", "python", "scripts/migrate_postgres.py"]
+    environment:
+      DATABASE_URL: *database-url
+      LAYERTRACE_LOG_LEVEL: INFO
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   frontend:
     build:
       context: .

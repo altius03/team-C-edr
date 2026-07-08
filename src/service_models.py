@@ -108,6 +108,26 @@ class TaskRow(Base):
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
+class AnalysisJobRow(Base):
+    __tablename__ = "analysis_jobs"
+
+    job_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    celery_task_id: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    status: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
+    created_at: Mapped[str] = mapped_column(String(40), nullable=False)
+    updated_at: Mapped[str] = mapped_column(String(40), nullable=False)
+    started_at: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    completed_at: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    run_id: Mapped[str | None] = mapped_column(String(64), ForeignKey("runs.run_id", ondelete="SET NULL"), nullable=True)
+    customer_id: Mapped[str] = mapped_column(String(128), nullable=False, default="unknown")
+    tenant_id: Mapped[str] = mapped_column(String(128), nullable=False, default="unknown")
+    agent_version: Mapped[str] = mapped_column(String(80), nullable=False, default="unknown")
+    payload_version: Mapped[str] = mapped_column(String(80), nullable=False, default="unknown")
+    input_meta: Mapped[str] = mapped_column(Text, nullable=False)
+    result: Mapped[str | None] = mapped_column(Text, nullable=True)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
 class OutboxEventRow(Base):
     """Outbox event row for side effects derived from persistence changes."""
 
@@ -152,4 +172,6 @@ Index("idx_incidents_severity", IncidentRow.severity)
 Index("idx_alert_events_event", AlertEventRow.run_id, AlertEventRow.event_id)
 Index("idx_incident_alerts_alert", IncidentAlertRow.run_id, IncidentAlertRow.alert_id)
 Index("idx_dlq_events_error_code", DlqEventRow.error_code)
+Index("idx_analysis_jobs_status", AnalysisJobRow.status)
+Index("idx_analysis_jobs_celery_task_id", AnalysisJobRow.celery_task_id)
 Index("idx_outbox_events_status", OutboxEventRow.status)
