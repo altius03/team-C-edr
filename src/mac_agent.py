@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import ipaddress
 import json
 import os
 import re
@@ -16,12 +15,12 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from urllib.parse import urlparse
 
 if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from src.agent_shipper import AgentIdentity, AgentShipConfig, JsonObject, json_objects_from_dicts, ship_events
+from src.collector_policy import CollectorPolicyError, api_token_for_collector
 from src.config import AGENT_VERSION, CUSTOMER_ID, OUTPUTS_DIR, PAYLOAD_VERSION, TENANT_ID
 
 
@@ -68,7 +67,7 @@ def run_agent(argv: list[str] | None = None) -> int:
     try:
         _validate_duration(args.duration)
         bpf_tokens = _parse_bpf_tokens(args.bpf)
-        api_token = _api_token_for_collector(args.collector_url, args.api_token)
+        api_token = api_token_for_collector(args.collector_url, args.api_token)
         events = (
             simulate_events(args.host_id)
             if args.simulate
@@ -83,6 +82,9 @@ def run_agent(argv: list[str] | None = None) -> int:
         )
     except AgentCliError as error:
         _print_error(args.host_id, error)
+        return error.exit_code
+    except CollectorPolicyError as error:
+        _print_error(args.host_id, AgentCliError(error.code, error.message, error.exit_code))
         return error.exit_code
 
     payload = {
@@ -226,29 +228,6 @@ def _parse_bpf_tokens(bpf: str) -> list[str]:
         if token.startswith("-"):
             raise AgentCliError("invalid_bpf", "BPF tokens must not start with '-'", 2)
     return tokens
-
-
-def _api_token_for_collector(collector_url: str, api_token: str) -> str:
-    if not collector_url:
-        return api_token or "local-dev-token"
-    parsed = urlparse(collector_url)
-    is_loopback = _is_loopback_hostname(parsed.hostname or "")
-    if not is_loopback and parsed.scheme != "https":
-        raise AgentCliError("insecure_collector_url", "non-loopback collectors must use https", 2)
-    if api_token:
-        return api_token
-    if is_loopback:
-        return "local-dev-token"
-    raise AgentCliError("missing_api_token", "LAYERTRACE_API_TOKEN or --api-token is required for non-loopback collectors", 2)
-
-
-def _is_loopback_hostname(hostname: str) -> bool:
-    if hostname.lower() == "localhost":
-        return True
-    try:
-        return ipaddress.ip_address(hostname).is_loopback
-    except ValueError:
-        return False
 
 
 def _wait_until_duration(process: subprocess.Popen[str], duration: int) -> bool:

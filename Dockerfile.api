@@ -13,7 +13,6 @@ COPY src ./src
 COPY scripts ./scripts
 COPY samples ./samples
 COPY rules ./rules
-COPY dashboard ./dashboard
 COPY web/public ./web/public
 
 EXPOSE 8080

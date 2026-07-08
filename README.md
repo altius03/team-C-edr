@@ -25,7 +25,7 @@ Endpoint Agents
 -> 기존 Analysis Pipeline 실행
 -> PostgreSQL 결과 저장소
 -> FastAPI Read APIs
--> Vercel Dashboard
+-> React/Vite Dashboard
 ```
 
 ---
@@ -56,12 +56,14 @@ flowchart LR
   AI --> O
   O --> DB["PostgreSQL 결과 저장소"]
   DB --> API["FastAPI Read APIs"]
-  API --> VERCEL["Vercel Dashboard"]
+  API --> DASH["React/Vite Dashboard"]
   O --> REP["보안 보고서 HTML/Markdown"]
   O --> PIPE["텔레메트리 gzip 묶음"]
 ```
 
-ERD, SA, 작업 계획 같은 문서 산출물은 로컬 `docs/`에만 보관하고 GitHub에는 README만 남깁니다.
+현재 저장소에는 실행 코드, 테스트, 샘플 입력, React/Vite 대시보드, Docker/마이그레이션 파일,
+그리고 `docs/agent-shipping-runbook.md`만 문서로 남깁니다. ERD, SA, 리뷰 증적,
+오래된 실행 결과 같은 산출물은 로컬 generated artifact로 취급해 Git 추적 대상에서 제외합니다.
 
 ---
 
@@ -81,6 +83,11 @@ outputs/reports/latest/security_report.html
 outputs/reports/latest/security_report.md
 outputs/pipeline/latest/telemetry_bundle.json.gz
 ```
+
+저장소에는 최신 실행 결과만 남기는 정책을 사용합니다. 반복 실행으로 생기는
+`outputs/runs/`, `outputs/reports/runs/`, `outputs/pipeline/runs/`,
+`outputs/verification/`, `outputs/architecture/` 같은 히스토리/검증/아키텍처 산출물은
+필요할 때 다시 만들 수 있는 로컬 산출물입니다.
 
 대시보드에서 `보고서 열기`를 누르면 팝업 보고서가 열리고, `PDF로 저장`은 브라우저의 print-to-PDF 흐름을 사용합니다. 사용자 화면에는 raw `result.json` 링크를 노출하지 않습니다.
 
@@ -112,7 +119,7 @@ npm run build
 
 ## Docker Compose 실행
 
-Default compose deployment starts PostgreSQL, Redis, API, Celery worker, and a local-only frontend preview. Production dashboard hosting is expected to be split to Vercel. Redis is used only as the Celery broker; final runs, events, alerts, incidents, DLQ rows, and outbox rows stay in PostgreSQL. RabbitMQ, Kafka, Redpanda, Celery beat, and monitoring stacks are intentionally excluded.
+Default compose deployment starts PostgreSQL, Redis, API, Celery worker, and a local-only frontend preview. Production dashboard hosting can be split from the API service. Redis is used only as the Celery broker; final runs, events, alerts, incidents, DLQ rows, and outbox rows stay in PostgreSQL. RabbitMQ, Kafka, Redpanda, Celery beat, and monitoring stacks are intentionally excluded.
 
 ```powershell
 Copy-Item .env.example .env
@@ -142,7 +149,7 @@ npm run local:migrate
 Compose 기본 흐름은 다음과 같습니다.
 
 ```text
-Endpoint Agents -> FastAPI /v1/telemetry/events -> Redis Broker -> Celery Worker -> PostgreSQL -> FastAPI Read APIs -> Vercel Dashboard
+Endpoint Agents -> FastAPI /v1/telemetry/events -> Redis Broker -> Celery Worker -> PostgreSQL -> FastAPI Read APIs -> React/Vite Dashboard
 ```
 
 종료:
@@ -168,6 +175,7 @@ uv run python -m unittest discover -s tests
 ```
 
 성공하면 `outputs/verification/latest_verification.json`에 검증 결과가 남습니다.
+이 경로는 검증 실행 시 다시 생성되는 로컬 산출물입니다.
 
 ---
 
@@ -208,6 +216,30 @@ Windows 수집 경로는 분리되어 있습니다.
 
 - 프로세스 텔레메트리: Windows `Win32_Process`/프로세스 스냅샷 계열에서 프로세스 이름, 경로, 부모 프로세스를 가져옵니다.
 - DNS 캐시 텔레메트리: 해석기/캐시 관측값을 별도 출처로 가져옵니다. DNS 값은 Win32 프로세스에서 직접 나오는 것이 아니라, 나중에 `host_id`, `process_name`, `domain`, `event_time`으로 SIEM 상관분석합니다.
+
+---
+
+## 수집기 파일명과 공통 규칙
+
+| 플랫폼/역할 | 파일 | 설명 |
+|---|---|---|
+| Windows 로컬 수집기 | `src/local_collector.py` | 프로세스, TCP 연결, 선택 DNS 캐시, Downloads 파일 메타데이터를 이벤트 스키마로 변환 |
+| Windows 1회 수집/전송 CLI | `scripts/run_agent_once.py` | Windows 로컬 수집 결과를 `/v1/telemetry/events`로 전송 |
+| macOS 수집기 | `src/mac_agent.py` | `tcpdump` 네트워크 메타데이터 또는 simulate 이벤트를 이벤트 스키마로 변환/전송 |
+| 공통 collector 정책 | `src/collector_policy.py` | loopback/HTTPS/API token 정책 |
+| 공통 전송기 | `src/agent_shipper.py` | REST ingest 헤더, 전송, 실패 시 spool queue 처리 |
+| macOS LaunchAgent 설치 | `scripts/install_mac_agent.sh` | macOS 반복 실행용 LaunchAgent plist 생성 |
+| macOS LaunchAgent 제거 | `scripts/uninstall_mac_agent.sh` | macOS LaunchAgent 제거 |
+
+공통 전송 규칙:
+
+- 두 플랫폼 모두 같은 REST ingest 경로인 `POST /v1/telemetry/events`를 사용합니다.
+- 두 플랫폼 모두 `X-Customer-Id`, `X-Tenant-Id`, `X-Agent-Version`, `X-Payload-Version`, `X-Api-Token` 헤더를 사용합니다.
+- loopback collector(`localhost`, `127.0.0.1`)는 로컬 데모 편의를 위해 HTTP와 `local-dev-token` 기본값을 허용합니다.
+- loopback이 아닌 collector는 반드시 `https://` URL이어야 하고, `--api-token` 또는 `LAYERTRACE_API_TOKEN`을 명시해야 합니다.
+- 전송 실패 시 공통 전송기가 `outputs/agent_queue/`에 이벤트를 spool하고 다음 전송 때 먼저 replay합니다.
+
+플랫폼별 수집 범위는 다릅니다. Windows는 OS API로 프로세스/연결/DNS/다운로드 메타데이터를 직접 수집하고, macOS는 현재 `tcpdump` 기반 네트워크 메타데이터만 수집합니다. 이후 탐지 파이프라인은 두 플랫폼 모두 같은 이벤트 스키마와 탐지 규칙을 사용합니다.
 
 ---
 
@@ -306,6 +338,32 @@ python3 -m src.mac_agent --simulate --collector-url http://127.0.0.1:8080/v1/tel
 로컬 데모에서만 허용됩니다. 실제 `tcpdump` 캡처는 macOS BPF 권한이 없으면
 `tcpdump_failed` JSON 에러와 non-zero exit code로 실패합니다.
 
+수집하는 것:
+
+| 구분 | 내용 |
+|------|------|
+| 네트워크 흐름 | `tcpdump -i <iface> -l -n -tt -q` 출력에서 출발지/목적지 IP와 포트 |
+| 시간 | 패킷 관측 시각을 UTC ISO-8601 `event_time`으로 변환 |
+| 호스트 | `--host-id` 값, 기본값은 macOS hostname |
+| 이벤트 타입 | `network_connection` |
+| 바이트 | `tcpdump`의 `length` 값을 `bytes_out`으로 기록 |
+| 수집 모드 | `collection_mode=tcpdump_metadata`, `source=mac_agent_tcpdump` |
+| 전송 메타데이터 | `customer_id`, `tenant_id`, `agent_version`, `payload_version`, API token 헤더 |
+
+수집하지 않는 것:
+
+| 구분 | 이유 |
+|------|------|
+| 패킷 본문/PCAP 원본 | `tcpdump` 요약 라인만 파싱하고 원본 패킷을 저장하지 않음 |
+| HTTPS/TLS 본문 | 복호화나 콘텐츠 수집을 하지 않음 |
+| 프로세스 목록/경로 | 현재 macOS agent는 `tcpdump`만 사용하므로 `process_name`은 실제 캡처에서 `unknown` |
+| DNS 캐시 | Windows 로컬 수집기와 달리 macOS agent에는 DNS 캐시 수집 경로가 없음 |
+| 파일/다운로드 목록 | macOS agent 범위 밖 |
+
+`--simulate`는 `tcpdump` 권한이 없는 환경에서 같은 전송 경로를 검증하기 위한
+결정적 샘플 이벤트를 만듭니다. 이 샘플에는 `process_name=zsh`, `dst_domain`,
+`dst_ip`, `dst_port`, `bytes_out`, `bytes_in`, `duration_ms`가 들어갑니다.
+
 백그라운드 실행용 LaunchAgent 스크립트도 있습니다.
 
 ```bash
@@ -316,6 +374,7 @@ bash scripts/uninstall_mac_agent.sh
 
 설치 script의 `StartInterval` 기본값은 300초입니다. `COLLECTOR_URL`을 지정하지
 않으면 5분마다 실행만 하고 결과를 `outputs/agent/mac_agent.out.log`에 남깁니다.
+`outputs/agent/`는 설치/실행 시 다시 생성되는 로컬 산출물입니다.
 API로 전송하려면 `COLLECTOR_URL`과 `LAYERTRACE_API_TOKEN` 또는 `API_TOKEN`을
 설정해 설치합니다. 설치 script는 현재 사용자 권한으로 짧은 `tcpdump` preflight를
 먼저 실행합니다. 이미 별도 경로에서 캡처 권한을 검증한 경우에만
@@ -409,9 +468,17 @@ rules/threat_signatures.json
 
 ```text
 team-C-edr/
+├── README.md
+├── pyproject.toml
+├── package.json
+├── docker-compose.yml
+├── Dockerfile.api
+├── Dockerfile.frontend
+├── nginx.conf
 ├── src/
 │   ├── run.py              # 명령줄 진입점
 │   ├── local_collector.py  # Windows 로컬 메타데이터 수집기
+│   ├── collector_policy.py # Windows/macOS collector URL/token 공통 정책
 │   ├── pcap_flow.py        # PCAP / TCP 흐름 분석기
 │   ├── l7_inspector.py     # 복호화 L7 메타데이터 파서
 │   ├── mac_agent.py        # macOS 대상 에이전트 개념 검증
@@ -432,7 +499,10 @@ team-C-edr/
 │   ├── index.html
 │   ├── src/                # 리액트/타입스크립트 대시보드
 │   └── public/
-│       └── latest-result.json
+│       └── latest-result.json # demo/local fallback용 최신 결과
+├── docs/
+│   └── agent-shipping-runbook.md
+├── migrations/
 ├── samples/
 │   ├── default_events.json
 │   └── decrypted_l7_records.json
@@ -440,6 +510,7 @@ team-C-edr/
 │   └── threat_signatures.json
 ├── scripts/
 │   ├── build_react.mjs
+│   ├── run_agent_once.py
 │   ├── run_service.py
 │   ├── run_worker.py
 │   ├── validate_poc.py
@@ -447,7 +518,29 @@ team-C-edr/
 │   ├── install_mac_agent.sh
 │   └── uninstall_mac_agent.sh
 ├── tests/
-└── outputs/
+└── outputs/                # 최신 실행 산출물만 보존
+    ├── latest/
+    ├── reports/latest/
+    └── pipeline/latest/
+```
+
+아래 항목은 로컬에서 다시 만들 수 있어 기본 정리 대상입니다.
+
+```text
+.venv/
+node_modules/
+dist/
+**/__pycache__/
+.pytest_cache/
+.ruff_cache/
+.uv-cache/
+.playwright-cli/
+outputs/runs/
+outputs/reports/runs/
+outputs/pipeline/runs/
+outputs/verification/
+outputs/architecture/
+ERD/SA/검증 스크린샷 같은 ignored docs 산출물
 ```
 
 ---

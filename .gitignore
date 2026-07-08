@@ -13,6 +13,8 @@ dist-smoke/
 dist-plugin-smoke/
 dist-api-smoke/
 tsconfig.tsbuildinfo
+.env
+.playwright-cli/
 
 # Local editor files
 .idea/

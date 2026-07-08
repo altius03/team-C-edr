@@ -12,12 +12,13 @@ if str(BASE_DIR) not in sys.path:
 
 def main(argv: list[str] | None = None) -> int:
     from src.agent_shipper import AgentIdentity, AgentShipConfig, json_objects_from_dicts, ship_events
+    from src.collector_policy import CollectorPolicyError, api_token_for_collector
     from src.config import AGENT_VERSION, CUSTOMER_ID, OUTPUTS_DIR, PAYLOAD_VERSION, TENANT_ID
     from src.local_collector import collect_local_events
 
     parser = argparse.ArgumentParser(description="Collect local endpoint metadata once and ship it to LayerTrace REST ingest.")
     parser.add_argument("--collector-url", required=True)
-    parser.add_argument("--api-token", default=os.environ.get("LAYERTRACE_API_TOKEN", "local-dev-token"))
+    parser.add_argument("--api-token", default=os.environ.get("LAYERTRACE_API_TOKEN") or "")
     parser.add_argument("--customer-id", default=CUSTOMER_ID)
     parser.add_argument("--tenant-id", default=TENANT_ID)
     parser.add_argument("--agent-version", default=AGENT_VERSION)
@@ -29,6 +30,24 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--max-connections", type=int, default=120)
     parser.add_argument("--timeout-seconds", type=float, default=8.0)
     args = parser.parse_args(argv)
+
+    try:
+        api_token = api_token_for_collector(args.collector_url, args.api_token)
+    except CollectorPolicyError as error:
+        print(
+            json.dumps(
+                {
+                    "status": "error",
+                    "source": "local_windows_collector",
+                    "collected_count": 0,
+                    "error": {"code": error.code, "message": error.message},
+                },
+                ensure_ascii=False,
+                indent=2,
+            ),
+            file=sys.stderr,
+        )
+        return error.exit_code
 
     events, meta = collect_local_events(
         lookback_hours=args.lookback_hours,
@@ -45,7 +64,7 @@ def main(argv: list[str] | None = None) -> int:
                 tenant_id=args.tenant_id,
                 agent_version=args.agent_version,
                 payload_version=args.payload_version,
-                api_token=args.api_token,
+                api_token=api_token,
             ),
             queue_dir=Path(args.queue_dir),
             timeout_seconds=args.timeout_seconds,
